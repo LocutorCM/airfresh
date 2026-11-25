@@ -2,6 +2,8 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
+// LookAndFeel que dibuja los knobs EXACTO como la imagen:
+// cuerpo azul claro / blanco, borde, arco cyan con glow, indicador blanco-cyan
 class AirLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -27,27 +29,29 @@ private:
     EC_AIRAudioProcessor& audioProcessor;
     AirLookAndFeel airLNF;
 
-    // === NUEVO: IMAGEN DE FONDO ===
-    // Esta imagen viene de Assets/EC-Air-Exciter-Background.png
-    // via juce_add_binary_data en CMakeLists.txt
+    // Imagen de fondo que subiste a GitHub
+    // Assets/EC-Air-Exciter-Background.png via juce_add_binary_data
     juce::Image backgroundImage;
 
+    // Knobs - mismos que ya tenias
     juce::Slider midAirSlider;
     juce::Slider highAirSlider;
     juce::Slider mixSlider;
     juce::Slider outputSlider;
 
-    juce::ToggleButton powerButton;
-    juce::TextButton presetAirButton;
-    juce::TextButton presetVocalButton;
-    juce::TextButton presetMasterButton;
-    juce::TextButton presetSubtleButton;
+    // Botones - mismos que en la imagen
+    juce::ToggleButton powerButton; // Switch POWER
+    juce::TextButton bypassButton;   // BYPASS
 
-    juce::Label midAirLabel, midAirValue;
-    juce::Label highAirLabel, highAirValue;
-    juce::Label mixLabel, mixValue;
-    juce::Label outputLabel, outputValue;
-    juce::Label titleLabel, subtitleLabel, brandLabel, presetLabel, footerLabel;
+    // Preset como en la imagen: dropdown arriba a la derecha
+    juce::ComboBox presetCombo;
+    juce::Label presetLabel;
+
+    // Labels de valores - van debajo de cada knob como en la imagen
+    juce::Label midAirValue;
+    juce::Label highAirValue;
+    juce::Label mixValue;
+    juce::Label outputValue;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> midAirAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> highAirAttachment;
@@ -55,13 +59,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment;
 
-    float meterLevel = 0.0f;
-    float meterTarget = 0.0f;
-
-    void applyPreset(float mid, float high, float mix, float out);
-    void setupKnob(juce::Slider& slider, juce::Label& label, juce::Label& value, const juce::String& name);
-    void setupPresetButton(juce::TextButton& btn, const juce::String& name);
-    void drawMeter(juce::Graphics& g, juce::Rectangle<int> area);
+    void applyPreset(int index);
+    void setupKnob(juce::Slider& slider);
+    void updateValueLabels();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EC_AIRAudioProcessorEditor)
 };
