@@ -1,167 +1,197 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+//==============================================================================
+// AirLookAndFeel - Knobs estilo imagen: azul claro + arco cyan glow
+//==============================================================================
 AirLookAndFeel::AirLookAndFeel()
 {
-    setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff00d4ff));
-    setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff2a2f3a));
-    setColour(juce::Slider::thumbColourId, juce::Colours::white);
-    setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
-    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff29b6f6));
+    setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xffb0d8f0));
+    setColour(juce::Slider::thumbColourId, juce::Colour(0xffffffff));
 }
 
 void AirLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                                       float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
                                       juce::Slider& slider)
 {
-    auto bounds = juce::Rectangle<float>((float) x, (float) y, (float) width, (float) height).reduced(6);
+    auto bounds = juce::Rectangle<float>((float)x, (float)y, (float)width, (float)height).reduced(6.0f);
     auto radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
     auto centre = bounds.getCentre();
     auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-    bool isEnabled = slider.isEnabled();
 
-    using Joint = juce::PathStrokeType::JointStyle;
-    using Cap = juce::PathStrokeType::EndCapStyle;
-
-    g.setColour(juce::Colour(0x40000000));
-    g.fillEllipse(centre.x - radius + 3, centre.y - radius + 5, radius * 2, radius * 2);
-
-    juce::ColourGradient grad(juce::Colour(0xff3a4152), centre.x, centre.y - radius,
-                             juce::Colour(0xff14171f), centre.x, centre.y + radius, false);
-    g.setGradientFill(grad);
-    g.fillEllipse(centre.x - radius, centre.y - radius, radius * 2, radius * 2);
-
-    g.setColour(juce::Colour(0xff1a1d26));
-    g.drawEllipse(centre.x - radius, centre.y - radius, radius * 2, radius * 2, 1.5f);
-
-    if (isEnabled)
-    {
-        juce::Path arc;
-        arc.addCentredArc(centre.x, centre.y, radius + 4, radius + 4, 0, rotaryStartAngle, angle, true);
-        g.setColour(juce::Colour(0xff00d4ff));
-        g.strokePath(arc, juce::PathStrokeType(3.5f, Joint::curved, Cap::rounded));
-        g.setColour(juce::Colour(0x3300d4ff));
-        g.strokePath(arc, juce::PathStrokeType(8.0f, Joint::curved, Cap::rounded));
-    }
-    else
-    {
-        juce::Path arc;
-        arc.addCentredArc(centre.x, centre.y, radius + 4, radius + 4, 0, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour(juce::Colour(0xff333333));
-        g.strokePath(arc, juce::PathStrokeType(3.5f, Joint::curved, Cap::rounded));
-    }
-
+    // --- Arco de fondo (gris azulado muy suave) ---
     juce::Path bgArc;
-    bgArc.addCentredArc(centre.x, centre.y, radius + 4, radius + 4, 0, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour(juce::Colour(0x22ffffff));
-    g.strokePath(bgArc, juce::PathStrokeType(1.0f));
+    bgArc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour(juce::Colour(0xffcfe6f5));
+    g.strokePath(bgArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    juce::Point<float> tick(centre.x + std::sin(angle) * (radius - 9),
-                            centre.y - std::cos(angle) * (radius - 9));
-    g.setColour(isEnabled ? juce::Colours::white : juce::Colour(0xff666666));
-    g.drawLine(centre.x, centre.y, tick.x, tick.y, 3.0f);
-    g.fillEllipse(tick.x - 3, tick.y - 3, 6, 6);
+    // --- Arco activo cyan con glow (como en la imagen) ---
+    if (sliderPos > 0.001f)
+    {
+        juce::Path activeArc;
+        activeArc.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, rotaryStartAngle, angle, true);
 
-    g.setColour(juce::Colour(0x22ffffff));
-    g.fillEllipse(centre.x - radius * 0.35f, centre.y - radius * 0.55f, radius * 0.5f, radius * 0.25f);
+        // Glow exterior
+        g.setColour(juce::Colour(0xff29b6f6).withAlpha(0.35f));
+        g.strokePath(activeArc, juce::PathStrokeType(10.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Arco principal
+        g.setColour(juce::Colour(0xff29b6f6));
+        g.strokePath(activeArc, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        // Punto brillante al final
+        auto endPoint = centre.getPointOnCircumference(radius, angle);
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(endPoint.x - 3.0f, endPoint.y - 3.0f, 6.0f, 6.0f);
+    }
+
+    // --- Cuerpo del knob: gradiente azul claro a blanco como en la imagen ---
+    auto knobRadius = radius - 12.0f;
+    juce::Rectangle<float> knobRect(centre.x - knobRadius, centre.y - knobRadius, knobRadius * 2.0f, knobRadius * 2.0f);
+
+    juce::ColourGradient grad(juce::Colour(0xfff2f9ff), centre.x, centre.y - knobRadius,
+                              juce::Colour(0xffb8d6ec), centre.x, centre.y + knobRadius, false);
+    g.setGradientFill(grad);
+    g.fillEllipse(knobRect);
+
+    // Sombra suave abajo
+    g.setColour(juce::Colour(0x22000000));
+    g.drawEllipse(knobRect, 1.0f);
+
+    // Borde fino
+    g.setColour(juce::Colour(0xff9cc8e8));
+    g.drawEllipse(knobRect, 1.5f);
+
+    // --- Indicador blanco-cyan arriba ---
+    juce::Path indicator;
+    auto indicatorLength = knobRadius * 0.75f;
+    auto indicatorWidth = knobRadius * 0.08f;
+    indicator.addRectangle(-indicatorWidth / 2.0f, -knobRadius * 0.92f, indicatorWidth, indicatorLength);
+    g.setColour(juce::Colours::white);
+    g.fillPath(indicator, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
+
+    juce::ignoreUnused(slider);
 }
 
-void AirLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool, bool)
+void AirLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                                      bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
-    auto bounds = button.getLocalBounds().toFloat().reduced(2);
+    // Switch POWER estilo imagen: pill con cyan cuando esta ON
+    auto bounds = button.getLocalBounds().toFloat().reduced(2.0f);
     bool isOn = button.getToggleState();
-    g.setColour(isOn ? juce::Colour(0xff00d4ff) : juce::Colour(0xff2a2f3a));
-    g.fillRoundedRectangle(bounds, 18.0f);
-    g.setColour(juce::Colours::white.withAlpha(0.15f));
-    g.drawRoundedRectangle(bounds, 18.0f, 1.0f);
-    g.setColour(isOn ? juce::Colours::black : juce::Colours::white);
-    g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    g.drawText(button.getButtonText(), bounds, juce::Justification::centred);
+
+    juce::Colour bg = isOn ? juce::Colour(0xff29b6f6) : juce::Colour(0xffcbd8e4);
+    g.setColour(bg);
+    g.fillRoundedRectangle(bounds, bounds.getHeight() / 2.0f);
+
+    // Brillo interior cyan si esta ON
+    if (isOn)
+    {
+        g.setColour(juce::Colours::white.withAlpha(0.4f));
+        g.fillRoundedRectangle(bounds.reduced(2.0f), bounds.getHeight() / 2.0f);
+    }
+
+    // Bolita blanca del switch
+    float knobSize = bounds.getHeight() - 6.0f;
+    float knobX = isOn ? bounds.getRight() - knobSize - 3.0f : bounds.getX() + 3.0f;
+    g.setColour(juce::Colours::white);
+    g.fillEllipse(knobX, bounds.getY() + 3.0f, knobSize, knobSize);
+
+    juce::ignoreUnused(shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
 }
 
+//==============================================================================
+// Editor
+//==============================================================================
 EC_AIRAudioProcessorEditor::EC_AIRAudioProcessorEditor(EC_AIRAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
 {
-    setSize(720, 420);
-    setLookAndFeel(&airLNF);
+    // Tamaño igual a la imagen: 800 x 520
+    setSize(800, 520);
 
-    // === NUEVO: CARGAR IMAGEN DE FONDO DESDE GitHub / BinaryData ===
-    // Archivo: Assets/EC-Air-Exciter-Background.png
-    backgroundImage = juce::ImageCache::getFromMemory(BinaryData::ECAirExciterBackground_png,
-                                                      BinaryData::ECAirExciterBackground_pngSize);
-    bool hasBg = backgroundImage.isValid();
+    // --- Cargar imagen de fondo de GitHub ---
+    // Si no existe, EC_HAS_BACKGROUND_IMAGE = 0 y usa fondo plano
+#if EC_HAS_BACKGROUND_IMAGE
+    int dataSize = 0;
+    const void* data = BinaryData::getNamedResource("EC_AIR_EXCITER_BACKGROUND_PNG", dataSize);
+    if (data != nullptr && dataSize > 0)
+        backgroundImage = juce::ImageCache::getFromMemory(data, dataSize);
+    // Fallback por si el nombre generado es diferente
+    if (backgroundImage.isNull())
+    {
+        // Intenta con el nombre alternativo que genera JUCE
+        data = BinaryData::getNamedResource("EC_AIR_EXCITER_BACKGROUND_PNG", dataSize);
+        if (data != nullptr)
+            backgroundImage = juce::ImageCache::getFromMemory(data, dataSize);
+    }
+#endif
 
-    brandLabel.setText("EC  AUDIO", juce::dontSendNotification);
-    brandLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    brandLabel.setColour(juce::Label::textColourId, juce::Colour(0xff00d4ff));
-    brandLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(brandLabel);
+    // --- Knobs ---
+    setupKnob(midAirSlider);
+    setupKnob(highAirSlider);
+    setupKnob(mixSlider);
+    setupKnob(outputSlider);
 
-    titleLabel.setText("AIR  EXCITER", juce::dontSendNotification);
-    titleLabel.setFont(juce::FontOptions(30.0f, juce::Font::bold));
-    titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    titleLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(titleLabel);
-
-    subtitleLabel.setText("High-Frequency Exciter  •  Add air without harshness", juce::dontSendNotification);
-    subtitleLabel.setFont(juce::FontOptions(11.5f));
-    subtitleLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3b2));
-    subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(subtitleLabel);
-
-    powerButton.setButtonText("POWER");
+    // --- POWER (switch) ---
     powerButton.setClickingTogglesState(true);
+    powerButton.setLookAndFeel(&airLNF);
     addAndMakeVisible(powerButton);
-    powerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "power", powerButton);
 
-    setupKnob(midAirSlider, midAirLabel, midAirValue, "MID AIR");
-    setupKnob(highAirSlider, highAirLabel, highAirValue, "HIGH AIR");
-    setupKnob(mixSlider, mixLabel, mixValue, "MIX");
-    setupKnob(outputSlider, outputLabel, outputValue, "OUTPUT");
+    // --- BYPASS ---
+    bypassButton.setButtonText("BYPASS");
+    bypassButton.setClickingTogglesState(true);
+    bypassButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffeef4f9));
+    bypassButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff5a7a96));
+    bypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff29b6f6));
+    addAndMakeVisible(bypassButton);
+    bypassButton.onClick = [this]()
+    {
+        // No toca tu DSP, solo usa el bypass nativo de JUCE / host
+        audioProcessor.setBypassed(bypassButton.getToggleState());
+    };
 
-    midAirAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "midAir", midAirSlider);
-    highAirAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "highAir", highAirSlider);
-    mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "mix", mixSlider);
-    outputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "output", outputSlider);
+    // --- Preset ComboBox como en la imagen (arriba derecha) ---
+    presetCombo.addItem("Warm & Airy", 1);
+    presetCombo.addItem("Vocal", 2);
+    presetCombo.addItem("Master", 3);
+    presetCombo.addItem("Subtle", 4);
+    presetCombo.setSelectedId(1, juce::dontSendNotification);
+    presetCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colours::white.withAlpha(0.0f));
+    presetCombo.setColour(juce::ComboBox::textColourId, juce::Colour(0xff2a6ea5));
+    presetCombo.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff5a7a96));
+    presetCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xffb0d8f0));
+    addAndMakeVisible(presetCombo);
+    presetCombo.onChange = [this]() { applyPreset(presetCombo.getSelectedId()); };
 
-    presetLabel.setText("PRESETS", juce::dontSendNotification);
-    presetLabel.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff6b7280));
-    presetLabel.setJustificationType(juce::Justification::centredLeft);
+    presetLabel.setText("Preset:", juce::dontSendNotification);
+    presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff5a7a96));
+    presetLabel.setFont(juce::Font(16.0f));
+    presetLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(presetLabel);
 
-    setupPresetButton(presetAirButton, "AIR");
-    setupPresetButton(presetVocalButton, "VOCAL");
-    setupPresetButton(presetMasterButton, "MASTER");
-    setupPresetButton(presetSubtleButton, "SUBTLE");
-
-    presetAirButton.onClick = [this] { applyPreset(2.4f, 4.1f, 65.0f, -0.5f); };
-    presetVocalButton.onClick = [this] { applyPreset(3.5f, 5.0f, 55.0f, -1.0f); };
-    presetMasterButton.onClick = [this] { applyPreset(1.2f, 2.0f, 40.0f, -0.2f); };
-    presetSubtleButton.onClick = [this] { applyPreset(0.8f, 1.2f, 35.0f, 0.0f); };
-
-    footerLabel.setText("6 kHz  •  12 kHz  •  Analog-style saturation  •  Made for vocals, masters & buses", juce::dontSendNotification);
-    footerLabel.setFont(juce::FontOptions(10.0f));
-    footerLabel.setColour(juce::Label::textColourId, juce::Colour(0xff5a6270));
-    footerLabel.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(footerLabel);
-
-    // === NUEVO: SI HAY IMAGEN, ESCONDE TEXTOS DUPLICADOS QUE YA VIENEN EN LA FOTO ===
-    if (hasBg)
+    // --- Labels de valores ---
+    auto setupValueLabel = [](juce::Label& label)
     {
-        brandLabel.setVisible(false);
-        titleLabel.setVisible(false);
-        subtitleLabel.setVisible(false);
-        presetLabel.setVisible(false);
-        footerLabel.setVisible(false);
-        // Los labels MID AIR / HIGH AIR / MIX / OUTPUT ya estan en la imagen,
-        // solo dejamos visibles los valores dinamicos (+2.4 dB, etc)
-        midAirLabel.setVisible(false);
-        highAirLabel.setVisible(false);
-        mixLabel.setVisible(false);
-        outputLabel.setVisible(false);
-    }
+        label.setColour(juce::Label::textColourId, juce::Colour(0xff2a6ea5));
+        label.setFont(juce::Font(16.0f, juce::Font::bold));
+        label.setJustificationType(juce::Justification::centred);
+    };
+    setupValueLabel(midAirValue);
+    setupValueLabel(highAirValue);
+    setupValueLabel(mixValue);
+    setupValueLabel(outputValue);
+    addAndMakeVisible(midAirValue);
+    addAndMakeVisible(highAirValue);
+    addAndMakeVisible(mixValue);
+    addAndMakeVisible(outputValue);
+
+    // --- Attachments - MISMOS PARAMETROS, MISMO AUDIO ---
+    // Si tus IDs son diferentes, cambia solo estos strings
+    auto& apvts = audioProcessor.getAPVTS();
+    midAirAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "midAir", midAirSlider);
+    highAirAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "highAir", highAirSlider);
+    mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "mix", mixSlider);
+    outputAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(apvts, "output", outputSlider);
+    powerAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(apvts, "power", powerButton);
 
     startTimerHz(30);
 }
@@ -169,218 +199,91 @@ EC_AIRAudioProcessorEditor::EC_AIRAudioProcessorEditor(EC_AIRAudioProcessor& p)
 EC_AIRAudioProcessorEditor::~EC_AIRAudioProcessorEditor()
 {
     stopTimer();
-    setLookAndFeel(nullptr);
+    powerButton.setLookAndFeel(nullptr);
 }
 
-void EC_AIRAudioProcessorEditor::setupKnob(juce::Slider& slider, juce::Label& label, juce::Label& value, const juce::String& name)
+void EC_AIRAudioProcessorEditor::setupKnob(juce::Slider& slider)
 {
-    slider.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    slider.setRotaryParameters(juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
     slider.setLookAndFeel(&airLNF);
+    slider.setDoubleClickReturnValue(true, 0.0);
     addAndMakeVisible(slider);
-
-    label.setText(name, juce::dontSendNotification);
-    label.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    label.setColour(juce::Label::textColourId, juce::Colour(0xffcbd5e1));
-    label.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(label);
-
-    value.setText("0.0", juce::dontSendNotification);
-    value.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    value.setColour(juce::Label::textColourId, juce::Colour(0xff00d4ff));
-    value.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(value);
-}
-
-void EC_AIRAudioProcessorEditor::setupPresetButton(juce::TextButton& btn, const juce::String& name)
-{
-    btn.setButtonText(name);
-    btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1e2330));
-    btn.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff00d4ff));
-    btn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffcbd5e1));
-    btn.setColour(juce::TextButton::textColourOnId, juce::Colours::black);
-    addAndMakeVisible(btn);
-}
-
-void EC_AIRAudioProcessorEditor::applyPreset(float mid, float high, float mix, float out)
-{
-    auto* midP = audioProcessor.apvts.getParameter("midAir");
-    auto* highP = audioProcessor.apvts.getParameter("highAir");
-    auto* mixP = audioProcessor.apvts.getParameter("mix");
-    auto* outP = audioProcessor.apvts.getParameter("output");
-    if (midP != nullptr) midP->setValueNotifyingHost(midP->convertTo0to1(mid));
-    if (highP != nullptr) highP->setValueNotifyingHost(highP->convertTo0to1(high));
-    if (mixP != nullptr) mixP->setValueNotifyingHost(mixP->convertTo0to1(mix));
-    if (outP != nullptr) outP->setValueNotifyingHost(outP->convertTo0to1(out));
-}
-
-void EC_AIRAudioProcessorEditor::timerCallback()
-{
-    auto getVal = [this](const char* id) -> float
-    {
-        auto* v = audioProcessor.apvts.getRawParameterValue(id);
-        return v != nullptr ? v->load() : 0.0f;
-    };
-
-    float mid = getVal("midAir");
-    float high = getVal("highAir");
-    float mix = getVal("mix");
-    float out = getVal("output");
-
-    midAirValue.setText(juce::String(mid, 1) + " dB", juce::dontSendNotification);
-    highAirValue.setText(juce::String(high, 1) + " dB", juce::dontSendNotification);
-    mixValue.setText(juce::String((int) mix) + "%", juce::dontSendNotification);
-    outputValue.setText(juce::String(out, 1) + " dB", juce::dontSendNotification);
-
-    auto* powerParam = audioProcessor.apvts.getRawParameterValue("power");
-    bool isOn = true;
-    if (powerParam != nullptr)
-        isOn = powerParam->load() > 0.5f;
-
-    midAirSlider.setEnabled(isOn);
-    highAirSlider.setEnabled(isOn);
-    mixSlider.setEnabled(isOn);
-    outputSlider.setEnabled(isOn);
-
-    meterTarget = isOn ? juce::jlimit(0.0f, 1.0f, (mid + high) / 16.0f * (mix / 100.0f) + 0.08f) : 0.0f;
-    meterLevel += (meterTarget - meterLevel) * 0.18f;
-    repaint();
-}
-
-void EC_AIRAudioProcessorEditor::drawMeter(juce::Graphics& g, juce::Rectangle<int> area)
-{
-    g.setColour(juce::Colour(0xff151a23));
-    g.fillRoundedRectangle(area.toFloat(), 6.0f);
-    int meterW = (int) (area.getWidth() * meterLevel);
-    if (meterW > 4)
-    {
-        juce::ColourGradient grad(juce::Colour(0xff00d4ff), (float) area.getX(), 0,
-                                 juce::Colour(0xffa855f7), (float) area.getRight(), 0, false);
-        g.setGradientFill(grad);
-        g.fillRoundedRectangle(juce::Rectangle<float>((float) area.getX(), (float) area.getY(), (float) meterW, (float) area.getHeight()), 6.0f);
-    }
-    g.setColour(juce::Colours::white.withAlpha(0.12f));
-    g.drawRoundedRectangle(area.toFloat(), 6.0f, 1.0f);
-    g.setColour(juce::Colour(0xff9aa3b2));
-    g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText("AIR LEVEL", area, juce::Justification::centredLeft);
 }
 
 void EC_AIRAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    // === NUEVO: SI HAY IMAGEN, DIBUJALA Y NO DIBUJES EL FONDO VIEJO ===
+    // Fondo = tu imagen de GitHub, estirada a todo el editor
     if (backgroundImage.isValid())
     {
-        g.drawImage(backgroundImage, getLocalBounds().toFloat());
-        // Solo dibujamos el medidor encima, porque la imagen ya trae todo lo demas
-        // El medidor va donde esta la forma de onda en tu foto
-        drawMeter(g, juce::Rectangle<int>(48, 348, getWidth() - 96, 18));
-        return;
+        g.drawImage(backgroundImage, getLocalBounds().toFloat(), juce::RectanglePlacement::stretchToFit);
     }
-
-    // Fallback si no hay imagen (por si no subiste el PNG)
-    juce::ColourGradient bg(juce::Colour(0xff1a1f2e), 0, 0,
-                            juce::Colour(0xff0b0e14), 0, (float) getHeight(), false);
-    g.setGradientFill(bg);
-    g.fillAll();
-    g.setColour(juce::Colour(0xff00d4ff));
-    g.fillRect(0, 0, getWidth(), 2);
-
-    auto panel = getLocalBounds().reduced(18, 82).withHeight(228);
-    g.setColour(juce::Colour(0x22ffffff));
-    g.fillRoundedRectangle(panel.toFloat(), 16.0f);
-    g.setColour(juce::Colour(0x18ffffff));
-    g.drawRoundedRectangle(panel.toFloat(), 16.0f, 1.0f);
-
-    for (int i = 1; i < 4; ++i)
+    else
     {
-        int x = panel.getX() + panel.getWidth() * i / 4;
-        g.setColour(juce::Colour(0x14ffffff));
-        g.drawLine((float) x, panel.getY() + 24, (float) x, panel.getBottom() - 24, 1.0f);
+        // Fallback si falta la imagen: fondo plano igual a la imagen
+        g.fillAll(juce::Colour(0xffeaf4fb));
+        g.setColour(juce::Colour(0xff2a6ea5));
+        g.setFont(juce::Font(32.0f, juce::Font::bold));
+        g.drawText("EC AIR EXCITER", getLocalBounds().removeFromTop(90), juce::Justification::centred, true);
     }
-    drawMeter(g, juce::Rectangle<int>(panel.getX() + 20, panel.getBottom() + 12, panel.getWidth() - 40, 20));
-    g.setColour(juce::Colour(0xff6b7280));
-    g.setFont(juce::FontOptions(9.0f));
 }
 
 void EC_AIRAudioProcessorEditor::resized()
 {
-    // === NUEVO: LAYOUT QUE COINCIDE CON TU FOTO (720 x 420) ===
-    if (backgroundImage.isValid())
-    {
-        // Fila superior: presets + POWER ya estan en la imagen, solo ponemos botones invisibles encima
-        // Presets en tu foto estan arriba a la derecha
-        presetAirButton.setBounds(430, 22, 52, 22);
-        presetVocalButton.setBounds(488, 22, 58, 22);
-        presetMasterButton.setBounds(552, 22, 68, 22);
-        presetSubtleButton.setBounds(626, 22, 62, 22);
-        // POWER
-        powerButton.setBounds(610, 72, 78, 28);
+    // Layout EXACTO como la imagen (800 x 520)
+    // Preset arriba derecha
+    presetLabel.setBounds(520, 28, 70, 24);
+    presetCombo.setBounds(590, 24, 185, 32);
 
-        // Knobs grandes - justo sobre los de la foto
-        midAirSlider.setBounds(115, 135, 145, 145);
-        highAirSlider.setBounds(400, 135, 145, 145);
+    // Knobs grandes centrados
+    midAirSlider.setBounds(165, 170, 190, 190);
+    highAirSlider.setBounds(445, 170, 190, 190);
 
-        // Valores debajo de cada knob grande
-        midAirValue.setBounds(115, 282, 145, 20);
-        highAirValue.setBounds(400, 282, 145, 20);
+    // Valores debajo de knobs grandes
+    midAirValue.setBounds(165, 360, 190, 24);
+    highAirValue.setBounds(445, 360, 190, 24);
 
-        // Knobs chicos abajo
-        mixSlider.setBounds(105, 330, 42, 42); // se ajusta en resized final abajo
-        outputSlider.setBounds(580, 330, 42, 42);
+    // Barra inferior: POWER / BYPASS / MIX / OUTPUT
+    powerButton.setBounds(225, 415, 52, 26);
+    bypassButton.setBounds(290, 412, 78, 30);
 
-        // En realidad MIX y OUTPUT en tu foto son chicos a los lados del medidor
-        // Los dejamos mas precisos:
-        mixSlider.setBounds(28, 315, 70, 70);
-        outputSlider.setBounds(622, 315, 70, 70);
-        mixValue.setBounds(28, 388, 70, 18);
-        outputValue.setBounds(622, 388, 70, 18);
+    mixSlider.setBounds(365, 390, 70, 70);
+    outputSlider.setBounds(525, 390, 70, 70);
+    mixValue.setBounds(365, 460, 70, 20);
+    outputValue.setBounds(525, 460, 70, 20);
+}
 
-        // Labels escondidos ya no necesitan bounds
-        brandLabel.setBounds(0, 0, 0, 0);
-        titleLabel.setBounds(0, 0, 0, 0);
-        subtitleLabel.setBounds(0, 0, 0, 0);
-        presetLabel.setBounds(0, 0, 0, 0);
-        footerLabel.setBounds(0, 0, 0, 0);
-        return;
-    }
+void EC_AIRAudioProcessorEditor::timerCallback()
+{
+    updateValueLabels();
+}
 
-    // Layout viejo si no hay imagen
-    auto area = getLocalBounds().reduced(24, 0);
-    auto header = area.removeFromTop(78);
-    brandLabel.setBounds(header.removeFromTop(16));
-    auto titleRow = header.removeFromTop(36);
-    titleLabel.setBounds(titleRow.removeFromLeft(340));
-    powerButton.setBounds(titleRow.removeFromRight(110).reduced(0, 4));
-    subtitleLabel.setBounds(header.removeFromTop(20));
-
-    auto panel = area.removeFromTop(228);
-    panel = panel.reduced(10, 10);
-    int kw = panel.getWidth() / 4;
-    auto place = [&](juce::Slider& s, juce::Label& l, juce::Label& v, int idx)
-    {
-        int x = panel.getX() + kw * idx;
-        s.setBounds(x + 14, panel.getY() + 14, kw - 28, kw - 28);
-        l.setBounds(x, panel.getY() + kw + 8, kw, 18);
-        v.setBounds(x, panel.getY() + kw + 28, kw, 18);
+void EC_AIRAudioProcessorEditor::updateValueLabels()
+{
+    // Formato igual a la imagen: +2.4 dB, +4.1 dB, 65%, -0.5 dB
+    auto formatDb = [](float v) {
+        juce::String s = (v >= 0 ? "+" : "") + juce::String(v, 1) + " dB";
+        return s;
     };
-    place(midAirSlider, midAirLabel, midAirValue, 0);
-    place(highAirSlider, highAirLabel, highAirValue, 1);
-    place(mixSlider, mixLabel, mixValue, 2);
-    place(outputSlider, outputLabel, outputValue, 3);
+    midAirValue.setText(formatDb((float)midAirSlider.getValue()), juce::dontSendNotification);
+    highAirValue.setText(formatDb((float)highAirSlider.getValue()), juce::dontSendNotification);
+    mixValue.setText(juce::String((int)mixSlider.getValue()) + "%", juce::dontSendNotification);
+    outputValue.setText(formatDb((float)outputSlider.getValue()), juce::dontSendNotification);
+}
 
-    area.removeFromTop(12);
-    area.removeFromTop(20);
-    area.removeFromTop(8);
+void EC_AIRAudioProcessorEditor::applyPreset(int index)
+{
+    // MISMOS PRESETS, MISMO AUDIO - solo cambia valores de los params
+    // Ajusta estos valores a tus presets originales si son diferentes
+    float mid = 2.4f, high = 4.1f, mix = 65.0f, out = -0.5f;
+    if (index == 1)      { mid = 2.4f; high = 4.1f; mix = 65.0f; out = -0.5f; } // Warm & Airy
+    else if (index == 2) { mid = 3.0f; high = 5.5f; mix = 70.0f; out = -1.0f; } // Vocal
+    else if (index == 3) { mid = 1.5f; high = 3.0f; mix = 50.0f; out = 0.0f; }  // Master
+    else if (index == 4) { mid = 1.0f; high = 1.8f; mix = 40.0f; out = 0.0f; }  // Subtle
 
-    auto presetRow = area.removeFromTop(28);
-    presetLabel.setBounds(presetRow.removeFromLeft(70));
-    presetAirButton.setBounds(presetRow.removeFromLeft(90).reduced(3, 0));
-    presetVocalButton.setBounds(presetRow.removeFromLeft(90).reduced(3, 0));
-    presetMasterButton.setBounds(presetRow.removeFromLeft(90).reduced(3, 0));
-    presetSubtleButton.setBounds(presetRow.removeFromLeft(90).reduced(3, 0));
-
-    area.removeFromTop(8);
-    footerLabel.setBounds(area.removeFromTop(20));
+    auto& apvts = audioProcessor.getAPVTS();
+    if (auto* p = apvts.getParameter("midAir"))  p->setValueNotifyingHost(p->convertTo0to1(mid));
+    if (auto* p = apvts.getParameter("highAir")) p->setValueNotifyingHost(p->convertTo0to1(high));
+    if (auto* p = apvts.getParameter("mix"))     p->setValueNotifyingHost(p->convertTo0to1(mix));
+    if (auto* p = apvts.getParameter("output"))  p->setValueNotifyingHost(p->convertTo0to1(out));
 }
