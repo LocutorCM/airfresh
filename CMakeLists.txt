@@ -4,7 +4,7 @@ project(EC_AIR VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# MODIFICADO: Monterey (12.0) en adelante, Universal
+# Monterey (12.0) en adelante, Universal
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version - Monterey en adelante")
 set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Architectures - Universal Binary")
 
@@ -43,10 +43,10 @@ juce_add_plugin(EC_AIR
 
 juce_generate_juce_header(EC_AIR)
 
-# === IMAGEN DE FONDO DEL PLUGIN - CON PROTECCION SI FALTA ===
-# Si no existe el PNG, compila con el fondo viejo y no truena el build
-# La imagen debe estar en: Assets/EC-Air-Exciter-Background.png
+# === IMAGEN DE FONDO DEL PLUGIN - LA QUE SUBISTE A GITHUB ===
+# Debe estar en: Assets/EC-Air-Exciter-Background.png
 # Tiene que ser PNG, no WebP
+# Si no existe, compila con fondo plano y NO truena el build
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/EC-Air-Exciter-Background.png)
     juce_add_binary_data(ECAirAssets
         SOURCES
@@ -56,21 +56,22 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/EC-Air-Exciter-Background.png)
     message(STATUS "Background image found: Assets/EC-Air-Exciter-Background.png")
 else()
     message(WARNING "Background image NOT found: Assets/EC-Air-Exciter-Background.png - building without background image")
-    # Crea un target vacio para que no falle el link
+    # Target vacio para que no falle el link
     juce_add_binary_data(ECAirAssets SOURCES)
     target_compile_definitions(EC_AIR PRIVATE EC_HAS_BACKGROUND_IMAGE=0)
 endif()
 
 target_sources(EC_AIR PRIVATE
     Source/PluginProcessor.cpp
+    Source/PluginProcessor.h
     Source/PluginEditor.cpp
+    Source/PluginEditor.h
 )
 
 target_compile_definitions(EC_AIR PUBLIC
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
-    JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_REPORT_APP_USAGE=0
 )
 
