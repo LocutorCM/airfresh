@@ -1,0 +1,72 @@
+name: Build EC_AIR
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-15-intel
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            -DCMAKE_INSTALL_PREFIX=install
+
+      - name: Build
+        run: cmake --build build --config Release -j 4
+
+      - name: Find AU and check
+        run: |
+          echo "=== Buscando AU ==="
+          find build -name "*.component" -type d
+          AU_PATH=$(find build -name "*.component" -type d | head -n 1)
+          echo "AU_PATH=$AU_PATH"
+          echo "AU_PATH=$AU_PATH" >> $GITHUB_ENV
+          if [ -z "$AU_PATH" ]; then
+            echo "ERROR: No se encontro ningun .component"
+            ls -R build/EC_AIR_artefacts || true
+            exit 1
+          fi
+          echo "=== Contenido MacOS ==="
+          ls -lh "$AU_PATH/Contents/MacOS/"
+          # CORREGIDO: El binario se llama igual que el bundle, no EC_AIR
+          # Busca el binario real dentro de MacOS, no asume el nombre
+          BIN_PATH=$(find "$AU_PATH/Contents/MacOS" -type f | head -n 1)
+          echo "BIN_PATH=$BIN_PATH"
+          echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
+          lipo -info "$BIN_PATH"
+          echo "=== Deployment Target ==="
+          otool -l "$BIN_PATH" | grep -A 2 LC_BUILD_VERSION || otool -l "$BIN_PATH" | grep -A 2 LC_VERSION_MIN_MACOSX
+
+      - name: Package
+        run: |
+          mkdir -p package
+          cp -R "$AU_PATH" package/
+          # VST3 si existe - generico, no asume nombre
+          VST3_PATH=$(find build -name "*.vst3" -type d | head -n 1)
+          if [ -n "$VST3_PATH" ]; then
+            echo "VST3: $VST3_PATH"
+            cp -R "$VST3_PATH" package/
+          fi
+          # Standalone si existe - generico
+          APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+          if [ -n "$APP_PATH" ]; then
+            echo "APP: $APP_PATH"
+            cp -R "$APP_PATH" package/
+          fi
+          ls -lh package/
+          cd package && zip -r ../EC_AIR_macOS_12_Plus_Universal.zip . && cd ..
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EC_AIR_macOS_12_Plus_Universal
+          path: EC_AIR_macOS_12_Plus_Universal.zip
