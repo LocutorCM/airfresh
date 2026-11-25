@@ -43,13 +43,23 @@ juce_add_plugin(EC_AIR
 
 juce_generate_juce_header(EC_AIR)
 
-# === NUEVO: IMAGEN DE FONDO DEL PLUGIN ===
-# Pon tu imagen aqui: Assets/EC-Air-Exciter-Background.png
+# === IMAGEN DE FONDO DEL PLUGIN - CON PROTECCION SI FALTA ===
+# Si no existe el PNG, compila con el fondo viejo y no truena el build
+# La imagen debe estar en: Assets/EC-Air-Exciter-Background.png
 # Tiene que ser PNG, no WebP
-juce_add_binary_data(ECAirAssets
-    SOURCES
-        Assets/EC-Air-Exciter-Background.png
-)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/EC-Air-Exciter-Background.png)
+    juce_add_binary_data(ECAirAssets
+        SOURCES
+            Assets/EC-Air-Exciter-Background.png
+    )
+    target_compile_definitions(EC_AIR PRIVATE EC_HAS_BACKGROUND_IMAGE=1)
+    message(STATUS "Background image found: Assets/EC-Air-Exciter-Background.png")
+else()
+    message(WARNING "Background image NOT found: Assets/EC-Air-Exciter-Background.png - building without background image")
+    # Crea un target vacio para que no falle el link
+    juce_add_binary_data(ECAirAssets SOURCES)
+    target_compile_definitions(EC_AIR PRIVATE EC_HAS_BACKGROUND_IMAGE=0)
+endif()
 
 target_sources(EC_AIR PRIVATE
     Source/PluginProcessor.cpp
