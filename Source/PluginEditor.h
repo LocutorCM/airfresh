@@ -33,7 +33,8 @@ private:
     // Assets/EC-Air-Exciter-Background.png via juce_add_binary_data
     juce::Image backgroundImage;
 
-    // Knobs - mismos que ya tenias
+    // Knobs - AHORA TODO EN % ESTILO FRESH AIR
+    // Mid Air: 0-100% | High Air: 0-100% | Mix: 0-100% | Output: 0-200% (100% = 0dB)
     juce::Slider midAirSlider;
     juce::Slider highAirSlider;
     juce::Slider mixSlider;
@@ -48,6 +49,7 @@ private:
     juce::Label presetLabel;
 
     // Labels de valores - van debajo de cada knob como en la imagen
+    // Ahora muestran "45%" no "4.5 dB"
     juce::Label midAirValue;
     juce::Label highAirValue;
     juce::Label mixValue;
