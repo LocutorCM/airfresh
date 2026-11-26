@@ -30,6 +30,7 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // === LOS QUE PIDE EL EDITOR - SI FALTAN, NO COMPILA ===
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     const juce::AudioProcessorValueTreeState& getAPVTS() const { return apvts; }
 
@@ -37,23 +38,22 @@ public:
     bool isBypassed() const { return bypassed; }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // Tiene que ser PUBLICO para que el Editor lo vea
     juce::AudioProcessorValueTreeState apvts;
 
 private:
+    // === BYPASS - LO USA processBlock ===
     bool bypassed = false;
 
-    // === DSP DE ALTA CALIDAD ===
-    // Oversampling 4x para que el exciter no genere aliasing / harsh
-    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
-
-    // Filtros en paralelo, no en serie
-    // Mid Air: banda 2kHz - 8kHz
-    // High Air: banda 8kHz en adelante
+    // === DSP SEGURO - SIN OVERSAMPLING, SIN CORTO ===
+    // Mid Air: pasa-banda 2kHz - 9kHz
+    // High Air: pasa-altas 9kHz en adelante - YA NO ESTA EN SERIE
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midHighPass;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midLowPass;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highHighPass;
 
-    // Suavizado de parametros para que no haga clicks al mover knobs
+    // Suavizado para que no haga clicks al mover knobs
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> midAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> highAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmooth;
