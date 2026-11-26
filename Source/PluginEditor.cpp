@@ -78,7 +78,7 @@ void AirLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& but
 }
 
 //==============================================================================
-// Editor
+// Editor - TODO EN % ESTILO FRESH AIR
 //==============================================================================
 EC_AIRAudioProcessorEditor::EC_AIRAudioProcessorEditor(EC_AIRAudioProcessor& p)
     : AudioProcessorEditor(&p), audioProcessor(p)
@@ -206,25 +206,29 @@ void EC_AIRAudioProcessorEditor::timerCallback()
     updateValueLabels();
 }
 
+// === FIX: YA NO ES dB, TODO ES % ===
 void EC_AIRAudioProcessorEditor::updateValueLabels()
 {
-    auto formatDb = [](float v) {
-        juce::String s = (v >= 0 ? "+" : "") + juce::String(v, 1) + " dB";
-        return s;
+    auto formatPercent = [](float v) {
+        return juce::String((int)std::round(v)) + "%";
     };
-    midAirValue.setText(formatDb((float)midAirSlider.getValue()), juce::dontSendNotification);
-    highAirValue.setText(formatDb((float)highAirSlider.getValue()), juce::dontSendNotification);
-    mixValue.setText(juce::String((int)mixSlider.getValue()) + "%", juce::dontSendNotification);
-    outputValue.setText(formatDb((float)outputSlider.getValue()), juce::dontSendNotification);
+    midAirValue.setText(formatPercent((float)midAirSlider.getValue()), juce::dontSendNotification);
+    highAirValue.setText(formatPercent((float)highAirSlider.getValue()), juce::dontSendNotification);
+    mixValue.setText(formatPercent((float)mixSlider.getValue()), juce::dontSendNotification);
+    outputValue.setText(formatPercent((float)outputSlider.getValue()), juce::dontSendNotification);
 }
 
+// === PRESETS FRESH AIR - AHORA EN % ===
+// Mid y High en %: 0% = nada, 100% = maximo brillo
+// Output en %: 100% = 0dB, 200% = +6dB
 void EC_AIRAudioProcessorEditor::applyPreset(int index)
 {
-    float mid = 2.4f, high = 4.1f, mix = 65.0f, out = -0.5f;
-    if (index == 1)      { mid = 2.4f; high = 4.1f; mix = 65.0f; out = -0.5f; }
-    else if (index == 2) { mid = 3.0f; high = 5.5f; mix = 70.0f; out = -1.0f; }
-    else if (index == 3) { mid = 1.5f; high = 3.0f; mix = 50.0f; out = 0.0f; }
-    else if (index == 4) { mid = 1.0f; high = 1.8f; mix = 40.0f; out = 0.0f; }
+    // Default: Warm & Airy
+    float mid = 25.0f, high = 35.0f, mix = 100.0f, out = 100.0f;
+    if (index == 1)      { mid = 25.0f; high = 35.0f; mix = 100.0f; out = 100.0f; } // Warm & Airy
+    else if (index == 2) { mid = 45.0f; high = 60.0f; mix = 100.0f; out = 100.0f; } // Vocal - MAS CLARIDAD
+    else if (index == 3) { mid = 20.0f; high = 30.0f; mix = 65.0f;  out = 100.0f; } // Master
+    else if (index == 4) { mid = 12.0f; high = 18.0f; mix = 50.0f;  out = 100.0f; } // Subtle
 
     auto& apvts = audioProcessor.getAPVTS();
     if (auto* p = apvts.getParameter("midAir"))  p->setValueNotifyingHost(p->convertTo0to1(mid));
