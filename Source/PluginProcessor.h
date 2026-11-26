@@ -30,7 +30,6 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // === LOS QUE PIDE EL EDITOR - SI FALTAN, NO COMPILA ===
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     const juce::AudioProcessorValueTreeState& getAPVTS() const { return apvts; }
 
@@ -38,22 +37,22 @@ public:
     bool isBypassed() const { return bypassed; }
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-
-    // Tiene que ser PUBLICO para que el Editor lo vea
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    // === BYPASS - LO USA processBlock ===
     bool bypassed = false;
 
-    // === DSP SEGURO - SIN OVERSAMPLING, SIN CORTO ===
-    // Mid Air: pasa-banda 2kHz - 9kHz
-    // High Air: pasa-altas 9kHz en adelante - YA NO ESTA EN SERIE
+    // === FRESH AIR STYLE - BANDAS EN PARALELO ===
+    // Mid Air: 2kHz - 8kHz -> Claridad de voz
+    // High Air: 10kHz+ -> Brillo sedoso
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midHighPass;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midLowPass;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highHighPass;
+    // Shelf para el brillo real, como lo hace Fresh Air - no solo exciter
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midShelf;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highShelf;
 
-    // Suavizado para que no haga clicks al mover knobs
+    // Suavizado - sin clicks
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> midAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> highAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmooth;
