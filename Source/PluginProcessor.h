@@ -42,17 +42,32 @@ public:
 private:
     bool bypassed = false;
 
-    // === FRESH AIR STYLE - BANDAS EN PARALELO ===
-    // Mid Air: 2kHz - 8kHz -> Claridad de voz
-    // High Air: 10kHz+ -> Brillo sedoso
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midHighPass;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midLowPass;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highHighPass;
-    // Shelf para el brillo real, como lo hace Fresh Air - no solo exciter
+    // === 5 BANDAS PARA QUITAR LO OPACO - COMO FRESH AIR PRO ===
+    // Body: 250Hz - cuerpo
+    // Presence: 3.5kHz - definicion, quita el trapo
+    // Mid Air: 5kHz - claridad
+    // High Air: 12kHz - brillo
+    // Super Air: 16kHz - aire ultra
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> bodyFilter;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> presenceHP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> presenceLP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midHP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midLP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highHP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> superHP;
+
+    // De-Esser: detecta S en 6-8kHz
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> deesserHP;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> deesserLP;
+
+    // Shelfs para brillo real
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midShelf;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highShelf;
 
-    // Suavizado - sin clicks
+    // Envolventes dinamicas - una por canal, por banda
+    float deesserEnv[2] = { 0.0f, 0.0f };
+    float airEnv[2] = { 0.0f, 0.0f };
+
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> midAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> highAirSmooth;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmooth;
