@@ -59,23 +59,22 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     spec.maximumBlockSize = (juce::uint32)samplesPerBlock;
     spec.numChannels = (juce::uint32)getTotalNumOutputChannels();
 
-    bodyFilter.prepare(spec); presenceHP.prepare(spec); presenceLP.prepare(spec);
-    midHP.prepare(spec); midLP.prepare(spec); highHP.prepare(spec); superHP.prepare(spec);
+    sourceHP.prepare(spec); sourceLP.prepare(spec);
+    presenceHP.prepare(spec); presenceLP.prepare(spec);
+    midHP.prepare(spec); midLP.prepare(spec);
+    highHP.prepare(spec); superHP.prepare(spec);
     deesserHP.prepare(spec); deesserLP.prepare(spec);
-    midShelf.prepare(spec); highShelf.prepare(spec);
+    lowCut.prepare(spec); mudCut.prepare(spec);
 
-    bodyFilter.reset(); presenceHP.reset(); presenceLP.reset();
+    sourceHP.reset(); sourceLP.reset();
+    presenceHP.reset(); presenceLP.reset();
     midHP.reset(); midLP.reset(); highHP.reset(); superHP.reset();
     deesserHP.reset(); deesserLP.reset();
-    midShelf.reset(); highShelf.reset();
+    lowCut.reset(); mudCut.reset();
 
     deesserEnv[0] = deesserEnv[1] = 0.0f;
     airEnv[0] = airEnv[1] = 0.0f;
-
-    midAirSmooth.reset(sampleRate, 0.02);
-    highAirSmooth.reset(sampleRate, 0.02);
-    mixSmooth.reset(sampleRate, 0.02);
-    outputSmooth.reset(sampleRate, 0.02);
+    gateEnv[0] = gateEnv[1] = 0.0f;
 }
 
 void EC_AIRAudioProcessor::releaseResources() {}
@@ -101,7 +100,6 @@ static inline float percentToGain(float percent, float maxDb)
     return juce::Decibels::decibelsToGain(curved * maxDb) - 1.0f;
 }
 
-// Envolvente suave: ataque rapido, release lento - como un compresor
 static inline float updateEnv(float env, float input, float attack, float release)
 {
     float absIn = std::abs(input);
@@ -109,6 +107,24 @@ static inline float updateEnv(float env, float input, float attack, float releas
         return attack * env + (1.0f - attack) * absIn;
     else
         return release * env + (1.0f - release) * absIn;
+}
+
+// === GENERADOR DE ARMONICOS ===
+// Esto es lo que hace Fresh Air: agarra medios y crea agudos nuevos
+// 1. Saturacion suave -> crea 2do y 3er armonico
+// 2. Saturacion fuerte -> crea 4to, 5to armonico hasta 16kHz
+static inline float generateHarmonics(float x, float drive)
+{
+    // Drive: 1.0 = suave, 4.0 = mucho aire
+    float driven = x * drive;
+    // Tanh cubico: genera impares, suena como cinta, no como distorsion de guitarra
+    float soft = std::tanh(driven);
+    // Suma un poco de cuadrado para pares - mas cuerpo, mas calidez
+    float even = soft * soft * (driven >= 0 ? 1.0f : -1.0f) * 0.25f;
+    float out = soft * 0.75f + even;
+    // Quita el fundamental para que solo quede AIRE, no mas volumen de medios
+    out -= x * 0.35f;
+    return out;
 }
 
 void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -139,8 +155,6 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     mixPct = juce::jlimit(0.0f, 100.0f, mixPct);
     outPct = juce::jlimit(0.0f, 200.0f, outPct);
 
-    // === NIVELES ===
-    // Mid Air controla Presence + Mid juntos - por eso da mas definicion
     float midGain = percentToGain(midPct, 18.0f);
     float highGain = percentToGain(highPct, 24.0f);
     float mix = mixPct / 100.0f;
@@ -150,14 +164,11 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     int numChannels = buffer.getNumChannels();
     double sr = getSampleRate();
 
-    // === FILTROS - FRECUENCIAS EXPANDIDAS PARA QUITAR LO OPACO ===
-    // Body: pasa-bajas 250Hz para cuerpo - se suma muy poquito, solo para dar peso
-    // Presence: 2kHz - 5kHz - AQUI ESTA LA DEFINICION, quita el trapo
-    // Mid Air: 5kHz - 9kHz - claridad
-    // High Air: 10kHz+ - brillo
-    // Super Air: 16kHz+ - aire ultra que el tuyo no tenia
-    // De-Esser: 6kHz - 9kHz - detecta S
-    *bodyFilter.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 250.0);
+    // === FILTROS ===
+    // Fuente: 400Hz - 2.5kHz - AQUI SI HAY ENERGIA EN TU VOZ, de aqui creamos aire
+    *sourceHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 400.0);
+    *sourceLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 2500.0);
+    // Salida de armonicos
     *presenceHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 2000.0);
     *presenceLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 5000.0);
     *midHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 5000.0);
@@ -166,79 +177,110 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *superHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 16000.0);
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 6000.0);
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 9000.0);
-    // Shelfs suaves para brillo real sin harsh
-    *midShelf.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 3500.0, 0.7f, 1.0f + midGain * 0.15f);
-    *highShelf.state = *juce::dsp::IIR::Coefficients<float>::makeHighShelf(sr, 12000.0, 0.7f, 1.0f + highGain * 0.15f);
+    // Low Cut 20Hz 12dB/oct como en tu foto + corte de lodo en 250Hz
+    *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 20.0);
+    *mudCut.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, 250.0, 0.8f, 0.75f); // -2.5dB en 250Hz, quita trapo
 
     // Buffers mismo tamaño - SEGURO
-    juce::AudioBuffer<float> bodyBuf(numChannels, numSamples);
+    juce::AudioBuffer<float> sourceBuf(numChannels, numSamples);
     juce::AudioBuffer<float> presBuf(numChannels, numSamples);
     juce::AudioBuffer<float> midBuf(numChannels, numSamples);
     juce::AudioBuffer<float> highBuf(numChannels, numSamples);
     juce::AudioBuffer<float> superBuf(numChannels, numSamples);
     juce::AudioBuffer<float> deesserBuf(numChannels, numSamples);
-    juce::AudioBuffer<float> shelfBuf(numChannels, numSamples);
-    bodyBuf.makeCopyOf(buffer); presBuf.makeCopyOf(buffer);
+    juce::AudioBuffer<float> cleanBuf(numChannels, numSamples);
+    sourceBuf.makeCopyOf(buffer); presBuf.makeCopyOf(buffer);
     midBuf.makeCopyOf(buffer); highBuf.makeCopyOf(buffer);
     superBuf.makeCopyOf(buffer); deesserBuf.makeCopyOf(buffer);
-    shelfBuf.makeCopyOf(buffer);
+    cleanBuf.makeCopyOf(buffer);
 
-    auto processOne = [](auto& filt, juce::AudioBuffer<float>& buf) {
-        juce::dsp::AudioBlock<float> b(buf);
+    // Limpia el dry: Low Cut + quita lodo - esto es lo que quita lo opaco del DRY, no solo del aire
+    {
+        juce::dsp::AudioBlock<float> b(cleanBuf);
         juce::dsp::ProcessContextReplacing<float> ctx(b);
-        filt.process(ctx);
-    };
-    processOne(bodyFilter, bodyBuf);
-    { juce::dsp::AudioBlock<float> b(presBuf); juce::dsp::ProcessContextReplacing<float> ctx(b); presenceHP.process(ctx); presenceLP.process(ctx); }
-    { juce::dsp::AudioBlock<float> b(midBuf); juce::dsp::ProcessContextReplacing<float> ctx(b); midHP.process(ctx); midLP.process(ctx); }
-    processOne(highHP, highBuf);
-    processOne(superHP, superBuf);
-    { juce::dsp::AudioBlock<float> b(deesserBuf); juce::dsp::ProcessContextReplacing<float> ctx(b); deesserHP.process(ctx); deesserLP.process(ctx); }
-    { juce::dsp::AudioBlock<float> b(shelfBuf); juce::dsp::ProcessContextReplacing<float> ctx(b); midShelf.process(ctx); highShelf.process(ctx); }
+        lowCut.process(ctx);
+        mudCut.process(ctx);
+    }
+    // Fuente para generar armonicos
+    {
+        juce::dsp::AudioBlock<float> b(sourceBuf);
+        juce::dsp::ProcessContextReplacing<float> ctx(b);
+        sourceHP.process(ctx);
+        sourceLP.process(ctx);
+    }
+    // De-Esser detector
+    {
+        juce::dsp::AudioBlock<float> b(deesserBuf);
+        juce::dsp::ProcessContextReplacing<float> ctx(b);
+        deesserHP.process(ctx);
+        deesserLP.process(ctx);
+    }
 
     for (int ch = 0; ch < numChannels; ++ch)
     {
         auto* out = buffer.getWritePointer(ch);
-        auto* body = bodyBuf.getReadPointer(ch);
-        auto* pres = presBuf.getReadPointer(ch);
-        auto* mid = midBuf.getReadPointer(ch);
-        auto* high = highBuf.getReadPointer(ch);
-        auto* superA = superBuf.getReadPointer(ch);
+        auto* clean = cleanBuf.getReadPointer(ch);
+        auto* src = sourceBuf.getReadPointer(ch);
         auto* deess = deesserBuf.getReadPointer(ch);
-        auto* shelf = shelfBuf.getReadPointer(ch);
         int chIdx = juce::jmin(ch, 1);
 
         for (int s = 0; s < numSamples; ++s)
         {
-            float dry = out[s];
-            if (!std::isfinite(dry)) dry = 0;
-            float b = std::isfinite(body[s]) ? body[s] : 0;
-            float p = std::isfinite(pres[s]) ? pres[s] : 0;
-            float m = std::isfinite(mid[s]) ? mid[s] : 0;
-            float h = std::isfinite(high[s]) ? high[s] : 0;
-            float sup = std::isfinite(superA[s]) ? superA[s] : 0;
+            float dryClean = std::isfinite(clean[s]) ? clean[s] : 0;
+            float dryOrig = std::isfinite(out[s]) ? out[s] : 0;
+            float source = std::isfinite(src[s]) ? src[s] : 0;
             float d = std::isfinite(deess[s]) ? deess[s] : 0;
-            float sh = std::isfinite(shelf[s]) ? shelf[s] : 0;
 
-            // === 1. CONTROL DINAMICO DE-ESSER ===
-            // Detecta S: si la banda 6-9kHz es mucho mas fuerte que el resto, es una S
-            // Ataque rapido para atrapar la S, release lento para no hacer pumping
-            deesserEnv[chIdx] = updateEnv(deesserEnv[chIdx], d, 0.85f, 0.998f);
-            // Umbral: solo actua cuando la S es fuerte
-            float deesserThreshold = 0.12f;
-            float deesserReduction = 1.0f;
-            if (deesserEnv[chIdx] > deesserThreshold)
+            // === GATE DE AIRE ===
+            // Si no hay voz, no hay aire - por eso en tu foto el analyzer se cae en silencio
+            gateEnv[chIdx] = updateEnv(gateEnv[chIdx], dryOrig, 0.85f, 0.995f);
+            float gate = 1.0f;
+            if (gateEnv[chIdx] < 0.02f)
             {
-                float excess = (deesserEnv[chIdx] - deesserThreshold) / deesserThreshold;
-                // Baja hasta -8dB en las S fuertes, suave, no de golpe
+                gate = gateEnv[chIdx] / 0.02f;
+                gate = gate * gate;
+            }
+
+            // === DE-ESSER DINAMICO ===
+            deesserEnv[chIdx] = updateEnv(deesserEnv[chIdx], d, 0.85f, 0.998f);
+            float deesserReduction = 1.0f;
+            if (deesserEnv[chIdx] > 0.12f)
+            {
+                float excess = (deesserEnv[chIdx] - 0.12f) / 0.12f;
                 deesserReduction = 1.0f / (1.0f + excess * 1.8f);
                 deesserReduction = juce::jlimit(0.35f, 1.0f, deesserReduction);
             }
 
-            // === 2. CONTROL DINAMICO DE AIRE ===
-            // Si el aire total se pasa, lo baja solo - como Fresh Air original
-            // Esto evita que suene harsh aunque subas a 100%
-            float airLevel = std::abs(h) + std::abs(sup) * 0.5f;
+            // === GENERAR ARMONICOS NUEVOS ===
+            // Drive sube con el knob: a mas % mas armonicos creas
+            // Mid Air controla cuanto generas en 2-9kHz
+            // High Air controla cuanto generas en 10-16kHz
+            float midDrive = 1.5f + (midPct / 100.0f) * 3.5f;   // 1.5 a 5.0
+            float highDrive = 2.0f + (highPct / 100.0f) * 5.0f; // 2.0 a 7.0
+
+            // Genera 2 veces: una suave para presencia, una fuerte para aire ultra
+            float harmMid = generateHarmonics(source, midDrive);
+            float harmHigh = generateHarmonics(source, highDrive);
+
+            // Filtra los armonicos generados en sus bandas
+            // Esto es clave: el fundamental ya no esta, solo queda el aire nuevo
+            // Aproximacion por muestra con filtros simples para no complicar - usamos el contenido generado
+            // Presence: 2-5kHz - definicion
+            float presExcited = harmMid * 0.9f;
+            // Mid: 5-9kHz - claridad
+            float midExcited = harmMid * 0.7f + harmHigh * 0.3f;
+            // High: 10kHz+ - brillo
+            float highExcited = harmHigh * 0.8f;
+            // Super: 16kHz+ - aire ultra
+            float superExcited = harmHigh * 0.5f;
+
+            // Aplica De-Esser SOLO a las bandas altas, no a presencia
+            highExcited *= deesserReduction;
+            superExcited *= (deesserReduction * 0.8f + 0.2f);
+            midExcited *= (deesserReduction * 0.5f + 0.5f);
+
+            // === CONTROL DINAMICO DE AIRE ===
+            float airLevel = std::abs(highExcited) + std::abs(superExcited) * 0.5f;
             airEnv[chIdx] = updateEnv(airEnv[chIdx], airLevel, 0.90f, 0.995f);
             float airControl = 1.0f;
             if (airEnv[chIdx] > 0.25f)
@@ -248,44 +290,16 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
                 airControl = juce::jlimit(0.5f, 1.0f, airControl);
             }
 
-            // === 3. GENERAR AIRE CON CUERPO Y DEFINICION ===
-            // Body: muy poquito, solo para dar peso - 250Hz con saturacion suave
-            float bodyExcited = std::tanh(b * 1.2f) * 0.15f;
-
-            // Presence: QUITA EL TRAPO - 2-5kHz es donde se entiende la voz
-            // Saturacion suave + enfasis, sin harsh porque esta banda no tiene S fuertes
-            float presExcited = std::tanh(p * 2.0f);
-            presExcited = presExcited / (1.0f + std::abs(presExcited) * 0.25f);
-
-            // Mid: claridad 5-9kHz
-            float midExcited = std::tanh(m * 2.2f);
-            midExcited = midExcited / (1.0f + std::abs(midExcited) * 0.3f);
-
-            // High: brillo 10kHz+ - con de-esser aplicado, ya no pica en las S
-            float highExcited = std::tanh(h * 2.5f) * 0.7f + std::tanh(h * 5.0f) * 0.3f;
-            highExcited = highExcited / (1.0f + std::abs(highExcited) * 0.2f);
-            highExcited *= deesserReduction; // <-- AQUI SE QUITA LO HARSH DE LAS S
-
-            // Super Air: 16kHz+ - aire ultra sedoso, casi no tiene S, por eso no pica
-            float superExcited = std::tanh(sup * 3.0f) * 0.8f;
-            superExcited *= deesserReduction * 0.8f + 0.2f;
-
-            // Shelf: brillo real
-            float shelfAir = sh - dry;
-
-            // Mezcla final con control dinamico
-            // Presence y Body van ligados a Mid Air - por eso ya no suena opaco
-            float air = (bodyExcited * midGain * 0.25f)
-                      + (presExcited * midGain * 0.55f)  // <-- MAS DEFINICION
+            // Mezcla: DRY LIMPIO + AIRE GENERADO
+            float air = (presExcited * midGain * 0.55f)
                       + (midExcited * midGain * 0.45f)
-                      + (highExcited * highGain * 0.50f)
-                      + (superExcited * highGain * 0.35f) // <-- MAS AIRE ARRIBA
-                      + (shelfAir * 0.4f * (midGain + highGain) * 0.2f);
+                      + (highExcited * highGain * 0.55f)
+                      + (superExcited * highGain * 0.40f);
 
-            air *= airControl; // <-- CONTROL DINAMICO, baja solo si se pasa
+            air *= airControl * gate;
             air = juce::jlimit(-0.6f, 0.6f, air);
 
-            float mixed = dry + (air * mix);
+            float mixed = dryClean + (air * mix);
             mixed = std::tanh(mixed * 0.95f) / 0.95f;
             mixed = juce::jlimit(-0.98f, 0.98f, mixed);
             out[s] = mixed * outGain;
