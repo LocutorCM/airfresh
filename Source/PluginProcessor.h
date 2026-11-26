@@ -30,27 +30,34 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // === ESTOS SON LOS QUE TE FALTABAN Y POR ESO FALLABA ===
-    // Los pide PluginEditor.cpp en linea 149, 189 y 284
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     const juce::AudioProcessorValueTreeState& getAPVTS() const { return apvts; }
 
     void setBypassed(bool shouldBypass) { bypassed = shouldBypass; }
     bool isBypassed() const { return bypassed; }
 
-    // Layout de parametros - lo usa PluginProcessor.cpp
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-
-    // APVTS tiene que ser PUBLICO para que el Editor lo vea
     juce::AudioProcessorValueTreeState apvts;
 
 private:
-    // === ESTOS TAMBIEN TE FALTABAN ===
-    // Los usa PluginProcessor.cpp en processBlock y prepareToPlay
     bool bypassed = false;
 
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midFilter;
-    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highFilter;
+    // === DSP DE ALTA CALIDAD ===
+    // Oversampling 4x para que el exciter no genere aliasing / harsh
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
+
+    // Filtros en paralelo, no en serie
+    // Mid Air: banda 2kHz - 8kHz
+    // High Air: banda 8kHz en adelante
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midHighPass;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> midLowPass;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> highHighPass;
+
+    // Suavizado de parametros para que no haga clicks al mover knobs
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> midAirSmooth;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> highAirSmooth;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmooth;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> outputSmooth;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EC_AIRAudioProcessor)
 };
