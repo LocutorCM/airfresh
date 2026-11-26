@@ -206,7 +206,7 @@ void EC_AIRAudioProcessorEditor::timerCallback()
     updateValueLabels();
 }
 
-// === FIX: YA NO ES dB, TODO ES % ===
+// === YA NO ES dB, TODO ES % ===
 void EC_AIRAudioProcessorEditor::updateValueLabels()
 {
     auto formatPercent = [](float v) {
@@ -218,17 +218,16 @@ void EC_AIRAudioProcessorEditor::updateValueLabels()
     outputValue.setText(formatPercent((float)outputSlider.getValue()), juce::dontSendNotification);
 }
 
-// === PRESETS FRESH AIR - AHORA EN % ===
-// Mid y High en %: 0% = nada, 100% = maximo brillo
-// Output en %: 100% = 0dB, 200% = +6dB
+// === PRESETS CORREGIDOS - YA NO SATURAN ===
+// ANTES: Vocal 45% / 60% / Mix 100% -> saturaba horrible
+// AHORA: Vocal 30% / 40% / Mix 70% -> limpio, con aire y definicion
 void EC_AIRAudioProcessorEditor::applyPreset(int index)
 {
-    // Default: Warm & Airy
-    float mid = 25.0f, high = 35.0f, mix = 100.0f, out = 100.0f;
-    if (index == 1)      { mid = 25.0f; high = 35.0f; mix = 100.0f; out = 100.0f; } // Warm & Airy
-    else if (index == 2) { mid = 45.0f; high = 60.0f; mix = 100.0f; out = 100.0f; } // Vocal - MAS CLARIDAD
-    else if (index == 3) { mid = 20.0f; high = 30.0f; mix = 65.0f;  out = 100.0f; } // Master
-    else if (index == 4) { mid = 12.0f; high = 18.0f; mix = 50.0f;  out = 100.0f; } // Subtle
+    float mid = 20.0f, high = 30.0f, mix = 70.0f, out = 100.0f;
+    if (index == 1)      { mid = 20.0f; high = 30.0f; mix = 70.0f; out = 100.0f; } // Warm & Airy
+    else if (index == 2) { mid = 30.0f; high = 40.0f; mix = 70.0f; out = 100.0f; } // Vocal
+    else if (index == 3) { mid = 15.0f; high = 20.0f; mix = 50.0f; out = 100.0f; } // Master
+    else if (index == 4) { mid = 8.0f;  high = 12.0f; mix = 40.0f; out = 100.0f; } // Subtle
 
     auto& apvts = audioProcessor.getAPVTS();
     if (auto* p = apvts.getParameter("midAir"))  p->setValueNotifyingHost(p->convertTo0to1(mid));
