@@ -1,6 +1,10 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#if EC_HAS_BACKGROUND_IMAGE
+#include "ECAirAssets.h"
+#endif
+
 //==============================================================================
 // AirLookAndFeel - Knobs estilo imagen: azul claro + arco cyan glow
 //==============================================================================
@@ -87,7 +91,8 @@ EC_AIRAudioProcessorEditor::EC_AIRAudioProcessorEditor(EC_AIRAudioProcessor& p)
 
 #if EC_HAS_BACKGROUND_IMAGE
     int dataSize = 0;
-    const void* data = BinaryData::getNamedResource("EC_AIR_EXCITER_BACKGROUND_PNG", dataSize);
+    // FIX: Antes era BinaryData:: - con el CMake nuevo es ECAirAssets::
+    const void* data = ECAirAssets::getNamedResource("EC_AIR_EXCITER_BACKGROUND_PNG", dataSize);
     if (data != nullptr && dataSize > 0)
         backgroundImage = juce::ImageCache::getFromMemory(data, dataSize);
 #endif
@@ -217,14 +222,13 @@ void EC_AIRAudioProcessorEditor::updateValueLabels()
     outputValue.setText(formatPercent((float)outputSlider.getValue()), juce::dontSendNotification);
 }
 
-// === PRESETS V3 - CALIBRADOS PARA EL GENERADOR NUEVO ===
-// Ya no saturan, ya no se cancelan. Estos son los que van con el Processor V3
+// === PRESETS V4 - CALIBRADOS PARA EL GENERADOR NUEVO CON PRE-GAIN ===
 void EC_AIRAudioProcessorEditor::applyPreset(int index)
 {
     float mid = 35.0f, high = 45.0f, mix = 80.0f, out = 100.0f;
     if (index == 1)      { mid = 35.0f; high = 45.0f; mix = 80.0f; out = 100.0f; } // Warm & Airy
-    else if (index == 2) { mid = 40.0f; high = 55.0f; mix = 80.0f; out = 100.0f; } // Vocal - con brillo de verdad
-    else if (index == 3) { mid = 20.0f; high = 25.0f; mix = 60.0f; out = 100.0f; } // Master - sutil para no romper la mezcla
+    else if (index == 2) { mid = 40.0f; high = 55.0f; mix = 80.0f; out = 100.0f; } // Vocal
+    else if (index == 3) { mid = 20.0f; high = 25.0f; mix = 60.0f; out = 100.0f; } // Master
     else if (index == 4) { mid = 12.0f; high = 18.0f; mix = 50.0f; out = 100.0f; } // Subtle
 
     auto& apvts = audioProcessor.getAPVTS();
