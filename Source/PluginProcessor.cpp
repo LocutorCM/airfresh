@@ -157,7 +157,7 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *highHarmHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 8500.0f));
     *midEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 1800.0f));
     *midEQLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 6500.0f));
-    *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 6500.0f));
+    *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 11500.0f));
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 28.0f));
@@ -232,10 +232,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     // Broad, gentle shelves are paired with harmonic generation to create an
     // audible "air" lift even on clean/low-level vocal recordings.
-    const float midDb = 3.0f * midAmountTarget;
-    const float highDb = 6.0f * highAmountTarget;
-    const float midLinearLift = std::pow(10.0f, midDb / 20.0f) - 1.0f;
-    const float highLinearLift = std::pow(10.0f, highDb / 20.0f) - 1.0f;
+    const float midDb = 6.0f * midAmountTarget;
+    const float highDb = 12.0f * highAmountTarget;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -246,7 +244,9 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
         const float midLift = std::pow(10.0f, (3.0f * midGainSmooth) / 20.0f) - 1.0f;
         const float highLift = std::pow(10.0f, (6.0f * highGainSmooth) / 20.0f) - 1.0f;
-        const float autoTrim = 1.0f / (1.0f + 0.10f * (midGainSmooth + highGainSmooth) * mixSmooth);
+        // Do not auto-trim the enhancement: the user explicitly controls the final level
+        // with OUTPUT, and automatic attenuation was masking the perceived effect.
+        const float autoTrim = 1.0f;
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -265,8 +265,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             const float midHarmonics = midShaped - (mid * midDrive);
             const float highHarmonics = highShaped - (high * highDrive);
 
-            const float midExcitation = 0.42f * midHarmonics;
-            const float highExcitation = 0.34f * highHarmonics;
+            const float midExcitation = 0.68f * midHarmonics;
+            const float highExcitation = 0.58f * highHarmonics;
 
             const float highLevel = std::abs(high);
             const float deEssTarget = juce::jlimit(0.72f, 1.0f,
