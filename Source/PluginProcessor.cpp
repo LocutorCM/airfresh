@@ -285,10 +285,10 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         mixSmooth = mixSmoothing * mixSmooth + (1.0f - mixSmoothing) * mixTarget;
         outputSmooth = outputSmoothingCoeff * outputSmooth + (1.0f - outputSmoothingCoeff) * outputTarget;
 
-        const float bodyLift = std::pow(10.0f, (3.5f * midGainSmooth) / 20.0f) - 1.0f;
-        const float clarityLift = std::pow(10.0f, (7.0f * midGainSmooth) / 20.0f) - 1.0f;
-        const float airLift = std::pow(10.0f, (15.0f * highGainSmooth) / 20.0f) - 1.0f;
-        const float ultraLift = std::pow(10.0f, (9.0f * highGainSmooth) / 20.0f) - 1.0f;
+        const float bodyLift = std::pow(10.0f, (4.2f * midGainSmooth) / 20.0f) - 1.0f;
+        const float clarityLift = std::pow(10.0f, (8.5f * midGainSmooth) / 20.0f) - 1.0f;
+        const float airLift = std::pow(10.0f, (16.0f * highGainSmooth) / 20.0f) - 1.0f;
+        const float ultraLift = std::pow(10.0f, (9.5f * highGainSmooth) / 20.0f) - 1.0f;
         // Do not auto-trim the enhancement: the user explicitly controls the final level
         // with OUTPUT, and automatic attenuation was masking the perceived effect.
         const float autoTrim = 1.0f;
@@ -314,8 +314,10 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             const float midHarmonics = midShaped - (mid * midDrive);
             const float highHarmonics = highShaped - (high * highDrive);
 
-            const float midExcitation = 0.68f * midHarmonics;
-            const float highExcitation = 0.58f * highHarmonics;
+            // Keep harmonic energy strongest in the vocal presence band. The upper-air
+            // harmonics are deliberately lower to avoid turning S/T consonants harsh.
+            const float midExcitation = 0.76f * midHarmonics;
+            const float highExcitation = 0.34f * highHarmonics;
 
             // Frequency-selective de-essing: reduce only the enhancement, not the dry vocal.
             deesserEnv[channel] = smoothEnvelope(deesserEnv[channel], high, highAttack, highRelease);
@@ -331,11 +333,15 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
                                      + (mid * clarityLift * deesserGainSmooth[channel])
                                      + (high * airLift * deesserGainSmooth[channel])
                                      + (ultra * ultraLift);
-            const float harmonicReturn = (0.34f * bodyHarmonics * midGainSmooth)
+            const float harmonicReturn = (0.26f * bodyHarmonics * midGainSmooth)
                                        + (midExcitation * midGainSmooth * deesserGainSmooth[channel])
                                        + (highExcitation * highGainSmooth * deesserGainSmooth[channel]);
             const float enhanced = input + (spectralLift + harmonicReturn) * mixSmooth;
-            const float processed = enhanced * outputSmooth * autoTrim;
+            // A restrained 1.4 dB makeup lift makes the improvement translate
+            // at normal monitor levels. A smooth tanh ceiling catches only peaks
+            // and avoids the brittle clipping that would exaggerate sibilance.
+            const float gained = enhanced * outputSmooth * autoTrim * 1.1749f;
+            const float processed = std::tanh(gained * 0.92f) / std::tanh(0.92f);
             out[i] = std::isfinite(processed) ? processed : input;
         }
     }
