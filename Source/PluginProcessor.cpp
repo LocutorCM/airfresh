@@ -92,7 +92,6 @@ bool EC_AIRAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) co
 }
 #endif
 
-// Envolvente con ataque y release separados - suave, sin clicks
 static inline float updateEnvSmooth(float env, float input, float attackCoeff, float releaseCoeff)
 {
     float absIn = std::abs(input);
@@ -126,11 +125,12 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     mixPct = juce::jlimit(0.0f, 100.0f, std::isfinite(mixPct) ? mixPct : 80.0f);
     outPct = juce::jlimit(0.0f, 200.0f, std::isfinite(outPct) ? outPct : 100.0f);
 
-    // === V5: GANANCIAS SUAVES, NO 5.0 - 6.0 COMO ANTES ===
-    // Fresh Air no mete +15dB de golpe. Mete poquito y dinamico.
-    // Mid Air: 0 a 1.2  |  High Air: 0 a 1.8
-    float midGain = std::pow(midPct / 100.0f, 1.5f) * 1.2f;
-    float highGain = std::pow(highPct / 100.0f, 1.5f) * 1.8f;
+    // === V6: GANANCIAS QUE SI SE ESCUCHAN, PERO SIN SATURAR ===
+    // Mid Air: 0 a 3.0 (antes 1.2, por eso no se escuchaba)
+    // High Air: 0 a 4.0 (antes 1.8)
+    // Esto es boost de EQ, no distorsion, por eso no suena rasposo
+    float midGain = std::pow(midPct / 100.0f, 1.3f) * 3.0f;
+    float highGain = std::pow(highPct / 100.0f, 1.3f) * 4.0f;
     float mix = mixPct / 100.0f;
     float outGain = outPct / 100.0f;
 
@@ -138,19 +138,14 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     int numChannels = buffer.getNumChannels();
     double sr = getSampleRate();
 
-    // Coeficientes - Filtros suaves de 12dB/oct, no de 24dB que suenan nasales
     *sourceHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 500.0);
     *sourceLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 3000.0);
-    // Mid Air: 2kHz - 8kHz - aqui vive la claridad, la presencia, lo que hace que se entienda la voz
     *midBandHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 2000.0);
     *midBandLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 8000.0);
-    // High Air: 8kHz - 20kHz - aqui vive el "aire", el brillo sedoso, lo que suena a Fresh Air
     *highBandHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 8000.0);
-    // De-esser: solo detecta 5.5kHz - 9kHz donde viven las S feas
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 5500.0);
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, 9000.0);
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, 25.0);
-    // Mud cut muy suave: -0.8dB en 250Hz, no -3dB como antes que te dejaba flaca la voz
     *mudCut.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, 250.0, 0.8f, 0.96f);
 
     juce::AudioBuffer<float> dryBuf(numChannels, numSamples);
@@ -158,10 +153,14 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     juce::AudioBuffer<float> exciterBuf(numChannels, numSamples);
     juce::AudioBuffer<float> midBuf(numChannels, numSamples);
     juce::AudioBuffer<float> highBuf(numChannels, numSamples);
+    juce::AudioBuffer<float> midEQBuf(numChannels, numSamples);  // NUEVO V6
+    juce::AudioBuffer<float> highEQBuf(numChannels, numSamples); // NUEVO V6
     juce::AudioBuffer<float> deesserBuf(numChannels, numSamples);
     dryBuf.makeCopyOf(buffer);
     sourceBuf.makeCopyOf(buffer);
     deesserBuf.makeCopyOf(buffer);
+    midEQBuf.makeCopyOf(buffer);  // El EQ sale directo de tu voz, no del exciter
+    highEQBuf.makeCopyOf(buffer);
 
     {
         juce::dsp::AudioBlock<float> b(dryBuf);
@@ -181,12 +180,25 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         deesserHP.process(ctx);
         deesserLP.process(ctx);
     }
+    // === V6: ESTO ES LO QUE FALTABA - BOOST DE EQ DIRECTO ===
+    // Antes solo teniamos armonicos chiquitos. Ahora tambien tenemos EQ.
+    // Es como si tuvieras un Fresh Air + un EQ de agudos juntos.
+    // Esto SI se escucha al activar/desactivar, aunque tu voz no tenga agudos
+    {
+        juce::dsp::AudioBlock<float> b(midEQBuf);
+        juce::dsp::ProcessContextReplacing<float> ctx(b);
+        midBandHP.process(ctx);
+        midBandLP.process(ctx);
+    }
+    {
+        juce::dsp::AudioBlock<float> b(highEQBuf);
+        juce::dsp::ProcessContextReplacing<float> ctx(b);
+        highBandHP.process(ctx);
+    }
 
-    // === GENERADOR DE ARMONICOS SUAVE - EL CAMBIO MAS IMPORTANTE ===
-    // ANTES: x * 4.0 + tanh(x * 4.0) = distorsion fea, saturada
-    // AHORA: Saturacion muy ligera tipo "tube" - solo un 10-15% de armonicos
-    // Formula: y = x - (x^3)/3  -> genera solo 2do y 3er armonico, suena sedoso
-    // Y le quitamos el fundamental para que no engorde la voz
+    // === GENERADOR DE ARMONICOS V6 - CORREGIDO ===
+    // Antes: (soft - xd) * 3.0 = 0.00016, nada
+    // Ahora: tanh suave + makeup gain x8, si se escucha pero sin raspar
     for (int ch = 0; ch < numChannels; ++ch)
     {
         auto* src = sourceBuf.getReadPointer(ch);
@@ -195,17 +207,13 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         {
             float x = src[s];
             if (!std::isfinite(x)) x = 0;
-            // Limitamos a +-0.8 para que nunca sature, aunque entres fuerte
-            x = juce::jlimit(-0.8f, 0.8f, x);
-            // Saturacion suave - drive bajo, 0.35 en vez de 4.0
-            float drive = 0.35f;
-            float xd = x * drive;
-            // Soft clip cubico - muy musical, no rasposo
-            float soft = xd - (xd * xd * xd) / 3.0f;
-            // Solo nos quedamos con lo que GENERO, no con el original
-            // Esto es clave: si sumas el original otra vez, saturas
-            float harmonics = (soft - xd) * 3.0f;
-            exc[s] = harmonics * 0.5f; // Bajito, porque luego lo subimos con el knob
+            x = juce::jlimit(-0.9f, 0.9f, x);
+            // Drive suave 0.6, no 4.0. Suficiente para crear armonicos, no para saturar
+            float driven = std::tanh(x * 1.8f);
+            // Nos quedamos solo con los armonicos generados
+            float harmonics = driven - x * 0.85f;
+            // Makeup gain - esto es lo que faltaba en V5
+            exc[s] = harmonics * 2.5f;
         }
     }
 
@@ -229,6 +237,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         auto* dry = dryBuf.getReadPointer(ch);
         auto* midB = midBuf.getReadPointer(ch);
         auto* highB = highBuf.getReadPointer(ch);
+        auto* midEQ = midEQBuf.getReadPointer(ch);
+        auto* highEQ = highEQBuf.getReadPointer(ch);
         auto* deess = deesserBuf.getReadPointer(ch);
         int chIdx = juce::jmin(ch, 1);
 
@@ -238,64 +248,52 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             float d = std::isfinite(deess[s]) ? deess[s] : 0;
             float m = std::isfinite(midB[s]) ? midB[s] : 0;
             float h = std::isfinite(highB[s]) ? highB[s] : 0;
+            float mEQ = std::isfinite(midEQ[s]) ? midEQ[s] : 0;
+            float hEQ = std::isfinite(highEQ[s]) ? highEQ[s] : 0;
 
-            // === GATE SUAVE - Para que no meta ruido cuando no cantas ===
+            // Gate mas bajo - antes 0.012 te cortaba la voz si cantabas bajito
+            // Ahora 0.006, solo corta el ruido, no tu voz
             gateEnv[chIdx] = updateEnvSmooth(gateEnv[chIdx], dryClean, 0.90f, 0.999f);
             float gate = 1.0f;
-            if (gateEnv[chIdx] < 0.012f)
+            if (gateEnv[chIdx] < 0.006f)
             {
-                gate = gateEnv[chIdx] / 0.012f;
-                gate *= gate; // Curva suave, no corte brusco
+                gate = gateEnv[chIdx] / 0.006f;
+                gate *= gate;
             }
 
-            // === DINAMICA ESTILO FRESH AIR - LA CLAVE DE LO SUAVE ===
-            // Cuando cantas FUERTE, el plugin se baja SOLO para no sonar chillón
-            // Cuando cantas BAJITO, te da mas aire para que no se pierda la voz
-            // Por eso Fresh Air se siente suave aunque lo pongas al 100%
+            // Dinamica Fresh Air - mas suave, no te baja tanto el aire
             midDynEnv[chIdx] = updateEnvSmooth(midDynEnv[chIdx], dryClean, 0.95f, 0.9995f);
             highDynEnv[chIdx] = updateEnvSmooth(highDynEnv[chIdx], dryClean, 0.95f, 0.9995f);
+            float midDyn = 1.0f / (1.0f + midDynEnv[chIdx] * 1.2f);
+            float highDyn = 1.0f / (1.0f + highDynEnv[chIdx] * 1.0f);
+            midDyn = juce::jlimit(0.55f, 1.0f, midDyn);
+            highDyn = juce::jlimit(0.55f, 1.0f, highDyn);
 
-            // Si cantas a 0.5, te baja el aire a la mitad. Si cantas a 0.1, te lo deja al 100%
-            float midDyn = 1.0f / (1.0f + midDynEnv[chIdx] * 2.2f);
-            float highDyn = 1.0f / (1.0f + highDynEnv[chIdx] * 1.8f);
-            midDyn = juce::jlimit(0.35f, 1.0f, midDyn);
-            highDyn = juce::jlimit(0.35f, 1.0f, highDyn);
-
-            // === DE-ESSER SUAVE ESTILO FRESH AIR - QUE NO TE COMA LA S ===
-            // Antes: te bajaba el aire a 0.4 de golpe = se escuchaba el "pumping" feo
-            // Ahora: threshold mas alto, ratio suave, y smoothing lento
-            // Solo actua en las S fuertes, no en toda la voz
+            // De-esser suave
             deesserEnv[chIdx] = updateEnvSmooth(deesserEnv[chIdx], d, 0.88f, 0.999f);
             float deesserTarget = 1.0f;
-            // Threshold 0.18 - solo las S que de verdad pican
             if (deesserEnv[chIdx] > 0.18f)
             {
                 float excess = (deesserEnv[chIdx] - 0.18f) / 0.18f;
-                // Ratio suave: maximo baja a 0.70, no a 0.40. La S sigue ahi, solo menos fea
                 deesserTarget = juce::jlimit(0.70f, 1.0f, 1.0f / (1.0f + excess * 0.55f));
             }
-            // Smoothing lento: ataque 15ms, release 120ms - no se escucha el "apagón"
             float smoothCoeff = deesserTarget < deesserGainSmooth[chIdx] ? 0.92f : 0.995f;
             deesserGainSmooth[chIdx] = smoothCoeff * deesserGainSmooth[chIdx] + (1.0f - smoothCoeff) * deesserTarget;
 
-            // === MEZCLA FINAL - PARALELO, NO EN SERIE ===
-            // El dry NUNCA se toca con saturacion. El aire va por al lado y se suma bajito.
-            // Por eso no se siente saturado aunque lo pongas al 100%
-            float midAir = m * midGain * midDyn * gate;
-            float highAir = h * highGain * highDyn * gate;
+            // === MEZCLA V6: EQ + ARMONICOS ===
+            // 70% es EQ directo de tu voz (esto es lo que SI se escucha)
+            // 30% es armonicos generados (esto es lo que le da el "aire" extra)
+            float midAir = (mEQ * 0.70f + m * 0.30f) * midGain * midDyn * gate;
+            float highAir = (hEQ * 0.70f + h * 0.30f) * highGain * highDyn * gate;
 
-            // El de-esser solo le baja al AIRE, no a tu voz. Tu voz queda intacta.
-            // Y le baja mas al Mid (donde vive la S fea) que al High (donde vive el aire bonito)
+            // De-esser solo al aire, no a tu voz
             midAir *= (0.55f + 0.45f * deesserGainSmooth[chIdx]);
             highAir *= (0.75f + 0.25f * deesserGainSmooth[chIdx]);
 
             float air = midAir + highAir;
-
-            // Limitador final ultra suave, solo para que no clipee, no para saturar
-            air = juce::jlimit(-0.25f, 0.25f, air);
+            air = juce::jlimit(-0.45f, 0.45f, air);
 
             float mixed = dryClean + (air * mix);
-            // Soft clip final muy ligero - 0.95 en vez de 0.90, casi no se nota
             mixed = std::tanh(mixed * 0.95f) / 0.95f;
             mixed = juce::jlimit(-0.98f, 0.98f, mixed);
             out[s] = mixed * outGain;
