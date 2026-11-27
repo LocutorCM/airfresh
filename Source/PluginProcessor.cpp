@@ -191,51 +191,9 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         sourceLP.process(context);
     }
 
-    // Create a restrained, mostly-even harmonic texture from the filtered source.
-    // The clean band signal remains dominant; this stage only adds density and air.
-    for (int ch = 0; ch < numChannels; ++ch)
-    {
-        const float* src = sourceScratch.getReadPointer(ch);
-        float* exc = exciterScratch.getWritePointer(ch);
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float x = std::isfinite(src[i]) ? juce::jlimit(-1.5f, 1.5f, src[i]) : 0.0f;
-            const float driven = std::tanh(1.65f * x);
-            const float fundamental = std::tanh(0.45f * x);
-            exc[i] = (driven - fundamental * 3.6666667f) * 0.72f;
-        }
-    }
-
-    {
-        juce::dsp::AudioBlock<float> block(exciterScratch);
-        auto active = block.getSubBlock(0, (size_t)numSamples);
-        juce::dsp::ProcessContextReplacing<float> context(active);
-        exciterLowPass.process(context);
-    }
-
-    for (int ch = 0; ch < numChannels; ++ch)
-    {
-        midScratch.copyFrom(ch, 0, exciterScratch, ch, 0, numSamples);
-        highScratch.copyFrom(ch, 0, exciterScratch, ch, 0, numSamples);
-    }
-
-    {
-        juce::dsp::AudioBlock<float> block(midScratch);
-        auto active = block.getSubBlock(0, (size_t)numSamples);
-        juce::dsp::ProcessContextReplacing<float> context(active);
-        midHarmHP.process(context);
-        midHarmLP.process(context);
-    }
-    {
-        juce::dsp::AudioBlock<float> block(highScratch);
-        auto active = block.getSubBlock(0, (size_t)numSamples);
-        juce::dsp::ProcessContextReplacing<float> context(active);
-        highHarmHP.process(context);
-        highSmoothLP.process(context);
-    }
-
-    // Clean spectral paths, separate from the harmonic filters.
-    // They provide the open, polished lift; harmonics add texture rather than harshness.
+    // Build clean spectral bands from the original input. This is intentionally
+    // not a waveshaper: Fresh-Air-style enhancement should open the top end without
+    // adding broadband distortion or clipping the vocal.
     if (cleanMidScratch.getNumSamples() < numSamples || cleanMidScratch.getNumChannels() < numChannels)
     {
         cleanMidScratch.setSize(numChannels, numSamples, false, false, true);
@@ -248,79 +206,65 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     }
     {
         juce::dsp::AudioBlock<float> block(cleanMidScratch);
-        juce::dsp::ProcessContextReplacing<float> context(block);
+        auto active = block.getSubBlock(0, (size_t)numSamples);
+        juce::dsp::ProcessContextReplacing<float> context(active);
         midEQHP.process(context);
         midEQLP.process(context);
     }
     {
         juce::dsp::AudioBlock<float> block(cleanHighScratch);
-        juce::dsp::ProcessContextReplacing<float> context(block);
+        auto active = block.getSubBlock(0, (size_t)numSamples);
+        juce::dsp::ProcessContextReplacing<float> context(active);
         highEQHP.process(context);
         highCleanSmoothLP.process(context);
     }
 
-    const float gainSmoothing = std::exp(-1.0f / (0.025f * (float)sr));
-    const float mixSmoothing = std::exp(-1.0f / (0.018f * (float)sr));
+    const float gainSmoothing = std::exp(-1.0f / (0.030f * (float)sr));
+    const float mixSmoothing = std::exp(-1.0f / (0.020f * (float)sr));
     const float outputSmoothingCoeff = std::exp(-1.0f / (0.020f * (float)sr));
-    const float midAttack = std::exp(-1.0f / (0.018f * (float)sr));
-    const float midRelease = std::exp(-1.0f / (0.180f * (float)sr));
-    const float highAttack = std::exp(-1.0f / (0.005f * (float)sr));
-    const float highRelease = std::exp(-1.0f / (0.115f * (float)sr));
+    const float highAttack = std::exp(-1.0f / (0.004f * (float)sr));
+    const float highRelease = std::exp(-1.0f / (0.120f * (float)sr));
 
-    // Update linked controls once per sample, then process all channels with
-    // the same gain value to keep the stereo image perfectly stable.
+    // The controls set the amount of spectral lift, not the level of a distorted
+    // signal. Mid Air reaches a gentle +3 dB; High Air reaches +6 dB.
+    const float midDb = std::pow(midPct / 100.0f, 1.35f) * 3.0f;
+    const float highDb = std::pow(highPct / 100.0f, 1.35f) * 6.0f;
+    const float midBoostTarget = juce::Decibels::decibelsToGain(midDb) - 1.0f;
+    const float highBoostTarget = juce::Decibels::decibelsToGain(highDb) - 1.0f;
+
     for (int i = 0; i < numSamples; ++i)
     {
-        midGainSmooth = gainSmoothing * midGainSmooth + (1.0f - gainSmoothing) * midTarget;
-        highGainSmooth = gainSmoothing * highGainSmooth + (1.0f - gainSmoothing) * highTarget;
+        midGainSmooth = gainSmoothing * midGainSmooth + (1.0f - gainSmoothing) * midBoostTarget;
+        highGainSmooth = gainSmoothing * highGainSmooth + (1.0f - gainSmoothing) * highBoostTarget;
         mixSmooth = mixSmoothing * mixSmooth + (1.0f - mixSmoothing) * mixTarget;
         outputSmooth = outputSmoothingCoeff * outputSmooth + (1.0f - outputSmoothingCoeff) * outputTarget;
+
+        // Small automatic level compensation prevents the added high-band energy
+        // from pushing an already-hot input into clipping.
+        const float autoTrim = 1.0f / (1.0f + 0.12f * (midGainSmooth + highGainSmooth) * mixSmooth);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
             float* out = buffer.getWritePointer(ch);
-            const float* midHarm = midScratch.getReadPointer(ch);
-            const float* highHarm = highScratch.getReadPointer(ch);
-            const float* midClean = cleanMidScratch.getReadPointer(ch);
-            const float* highClean = cleanHighScratch.getReadPointer(ch);
+            const float* midBand = cleanMidScratch.getReadPointer(ch);
+            const float* highBand = cleanHighScratch.getReadPointer(ch);
             const int channel = juce::jmin(ch, 1);
 
             const float input = std::isfinite(out[i]) ? out[i] : 0.0f;
-            midDynEnv[channel] = smoothEnvelope(midDynEnv[channel], input, midAttack, midRelease);
-            highDynEnv[channel] = smoothEnvelope(highDynEnv[channel], input, highAttack, highRelease);
-
-            // Gentle program-dependent restraint: only backs off on dense/loud material.
-            const float midDyn = juce::jlimit(0.72f, 1.0f, 1.0f / (1.0f + midDynEnv[channel] * 0.75f));
-            const float highDyn = juce::jlimit(0.68f, 1.0f, 1.0f / (1.0f + highDynEnv[channel] * 1.05f));
-
-            const float sibilance = std::abs(highClean[i]);
-            const float deEssTarget = juce::jlimit(0.78f, 1.0f, 1.0f - juce::jmax(0.0f, sibilance - 0.16f) * 0.45f);
-            const float deEssCoeff = deEssTarget < deesserGainSmooth[channel] ? 0.94f : 0.998f;
+            const float highLevel = std::abs(highBand[i]);
+            const float deEssTarget = juce::jlimit(0.72f, 1.0f,
+                1.0f - juce::jmax(0.0f, highLevel - 0.20f) * 0.35f);
+            const float deEssCoeff = deEssTarget < deesserGainSmooth[channel] ? highAttack : highRelease;
             deesserGainSmooth[channel] = deEssCoeff * deesserGainSmooth[channel]
                                        + (1.0f - deEssCoeff) * deEssTarget;
 
-            const float midAir = (midClean[i] * 0.78f + midHarm[i] * 0.22f)
-                               * midGainSmooth * midDyn;
-            const float highAir = (highClean[i] * 0.70f + highHarm[i] * 0.30f)
-                                * highGainSmooth * highDyn * deesserGainSmooth[channel];
-
-            float processed = input + (midAir + highAir) * mixSmooth;
-            processed *= outputSmooth;
-
-            // Transparent safety soft clip; it is inactive at ordinary levels.
-            const float magnitude = std::abs(processed);
-            if (magnitude > 0.985f)
-            {
-                const float excess = magnitude - 0.985f;
-                processed = std::copysign(0.985f + 0.015f * std::tanh(excess / 0.015f), processed);
-            }
-
+            const float spectralLift = (midBand[i] * midGainSmooth)
+                                     + (highBand[i] * highGainSmooth * deesserGainSmooth[channel]);
+            const float processed = (input + spectralLift * mixSmooth) * outputSmooth * autoTrim;
             out[i] = std::isfinite(processed) ? processed : 0.0f;
         }
     }
 
-
-}
 
 bool EC_AIRAudioProcessor::hasEditor() const { return true; }
 juce::AudioProcessorEditor* EC_AIRAudioProcessor::createEditor()
