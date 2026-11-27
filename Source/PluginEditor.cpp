@@ -206,7 +206,6 @@ void EC_AIRAudioProcessorEditor::timerCallback()
     updateValueLabels();
 }
 
-// === YA NO ES dB, TODO ES % ===
 void EC_AIRAudioProcessorEditor::updateValueLabels()
 {
     auto formatPercent = [](float v) {
@@ -218,16 +217,15 @@ void EC_AIRAudioProcessorEditor::updateValueLabels()
     outputValue.setText(formatPercent((float)outputSlider.getValue()), juce::dontSendNotification);
 }
 
-// === PRESETS CORREGIDOS - YA NO SATURAN ===
-// ANTES: Vocal 45% / 60% / Mix 100% -> saturaba horrible
-// AHORA: Vocal 30% / 40% / Mix 70% -> limpio, con aire y definicion
+// === PRESETS V3 - CALIBRADOS PARA EL GENERADOR NUEVO ===
+// Ya no saturan, ya no se cancelan. Estos son los que van con el Processor V3
 void EC_AIRAudioProcessorEditor::applyPreset(int index)
 {
-    float mid = 20.0f, high = 30.0f, mix = 70.0f, out = 100.0f;
-    if (index == 1)      { mid = 20.0f; high = 30.0f; mix = 70.0f; out = 100.0f; } // Warm & Airy
-    else if (index == 2) { mid = 30.0f; high = 40.0f; mix = 70.0f; out = 100.0f; } // Vocal
-    else if (index == 3) { mid = 15.0f; high = 20.0f; mix = 50.0f; out = 100.0f; } // Master
-    else if (index == 4) { mid = 8.0f;  high = 12.0f; mix = 40.0f; out = 100.0f; } // Subtle
+    float mid = 35.0f, high = 45.0f, mix = 80.0f, out = 100.0f;
+    if (index == 1)      { mid = 35.0f; high = 45.0f; mix = 80.0f; out = 100.0f; } // Warm & Airy
+    else if (index == 2) { mid = 40.0f; high = 55.0f; mix = 80.0f; out = 100.0f; } // Vocal - con brillo de verdad
+    else if (index == 3) { mid = 20.0f; high = 25.0f; mix = 60.0f; out = 100.0f; } // Master - sutil para no romper la mezcla
+    else if (index == 4) { mid = 12.0f; high = 18.0f; mix = 50.0f; out = 100.0f; } // Subtle
 
     auto& apvts = audioProcessor.getAPVTS();
     if (auto* p = apvts.getParameter("midAir"))  p->setValueNotifyingHost(p->convertTo0to1(mid));
