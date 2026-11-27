@@ -83,6 +83,7 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     }
     midGainSmooth = highGainSmooth = 0.0f;
     mixSmooth = 0.8f;
+    outputSmooth = 1.0f;
 }
 
 void EC_AIRAudioProcessor::releaseResources() {}
