@@ -143,9 +143,7 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     const float mixPct = juce::jlimit(0.0f, 100.0f, readParam("mix", 80.0f));
     const float outputPct = juce::jlimit(0.0f, 200.0f, readParam("output", 100.0f));
 
-    // Musical gain law: finer control at low settings, with a restrained maximum.
-    const float midTarget = std::pow(midPct / 100.0f, 1.45f) * 0.95f;
-    const float highTarget = std::pow(highPct / 100.0f, 1.45f) * 1.10f;
+    // Spectral lift is calculated in dB below; no nonlinear drive stage is used.
     const float mixTarget = mixPct * 0.01f;
     const float outputTarget = outputPct * 0.01f;
 
