@@ -36,20 +36,26 @@ private:
 
     using StereoFilter = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>;
 
-    // V5: Ya no son 10 filtros de distorsion, son shelves suaves estilo Fresh Air
-    StereoFilter sourceHP, sourceLP;      // Para sacar la fuente 400Hz - 3.5kHz
-    StereoFilter midBandHP, midBandLP;    // 2kHz - 8kHz  -> Mid Air
-    StereoFilter highBandHP;              // 8kHz - 20kHz -> High Air
-    StereoFilter deesserHP, deesserLP;    // 5.5kHz - 9kHz para detectar la S
-    StereoFilter lowCut, mudCut;          // Limpieza 20Hz y 250Hz
+    // V7 FIX: Filtros SEPARADOS - antes usaba el mismo filtro para EQ y para armonicos y por eso sonaba a interferencia
+    StereoFilter sourceHP, sourceLP;
+    StereoFilter midHarmHP, midHarmLP;   // Solo para armonicos 2k-8k
+    StereoFilter highHarmHP;             // Solo para armonicos 8k-16k
+    StereoFilter midEQHP, midEQLP;       // Solo para EQ directo 2k-8k
+    StereoFilter highEQHP;               // Solo para EQ directo 8k-20k
+    StereoFilter deesserHP, deesserLP;
+    StereoFilter lowCut, mudCut;
+    StereoFilter exciterLowPass;         // NUEVO: quita el aliasing que sonaba a interferencia
+    StereoFilter highSmoothLP;           // NUEVO: suaviza el High para que no pique
 
-    // Envolventes suaves - ataque lento = no se siente brusco
     float deesserEnv[2] = { 0.0f, 0.0f };
     float midDynEnv[2] = { 0.0f, 0.0f };
     float highDynEnv[2] = { 0.0f, 0.0f };
     float gateEnv[2] = { 0.0f, 0.0f };
-    // Smoothing para que el de-esser no haga "pumping"
     float deesserGainSmooth[2] = { 1.0f, 1.0f };
+    // NUEVO V7: Smoothing de ganancias - antes al mover el knob sonaba el "zipper" como interferencia
+    float midGainSmooth = 0.0f;
+    float highGainSmooth = 0.0f;
+    float mixSmooth = 0.8f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EC_AIRAudioProcessor)
 };
