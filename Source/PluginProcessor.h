@@ -34,21 +34,22 @@ private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     bool bypassed = false;
 
-    // === FIX V4: Filtros STEREO de verdad ===
-    // Antes: juce::dsp::IIR::Filter<float> = MONO, se cancelaba en stereo
-    // Ahora: ProcessorDuplicator = un filtro por canal, no se pisa
     using StereoFilter = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>;
 
-    StereoFilter sourceHP, sourceLP;
-    StereoFilter presenceHP, presenceLP;
-    StereoFilter midHP, midLP;
-    StereoFilter highHP, superHP;
-    StereoFilter deesserHP, deesserLP;
-    StereoFilter lowCut, mudCut;
+    // V5: Ya no son 10 filtros de distorsion, son shelves suaves estilo Fresh Air
+    StereoFilter sourceHP, sourceLP;      // Para sacar la fuente 400Hz - 3.5kHz
+    StereoFilter midBandHP, midBandLP;    // 2kHz - 8kHz  -> Mid Air
+    StereoFilter highBandHP;              // 8kHz - 20kHz -> High Air
+    StereoFilter deesserHP, deesserLP;    // 5.5kHz - 9kHz para detectar la S
+    StereoFilter lowCut, mudCut;          // Limpieza 20Hz y 250Hz
 
+    // Envolventes suaves - ataque lento = no se siente brusco
     float deesserEnv[2] = { 0.0f, 0.0f };
-    float airEnv[2] = { 0.0f, 0.0f };
+    float midDynEnv[2] = { 0.0f, 0.0f };
+    float highDynEnv[2] = { 0.0f, 0.0f };
     float gateEnv[2] = { 0.0f, 0.0f };
+    // Smoothing para que el de-esser no haga "pumping"
+    float deesserGainSmooth[2] = { 1.0f, 1.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EC_AIRAudioProcessor)
 };
