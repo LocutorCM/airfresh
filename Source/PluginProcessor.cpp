@@ -162,14 +162,14 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *midEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 1800.0f));
     *midEQLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 6500.0f));
     *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
-    *bodyHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 120.0f));
-    *bodyLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 420.0f));
+    *bodyHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 145.0f));
+    *bodyLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 360.0f));
     *ultraHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 20000.0f));
     *ultraLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 40000.0f));
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 11500.0f));
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 28.0f));
-    *mudCut.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, safeCutoff(sr, 280.0f), 0.8f, 0.94f);
+    *mudCut.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, safeCutoff(sr, 285.0f), 0.9f, 0.84f);
     *exciterLowPass.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 17000.0f));
     *highSmoothLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 17000.0f));
     *highCleanSmoothLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 19500.0f));
@@ -184,17 +184,14 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         highScratch.setSize(numChannels, numSamples, false, false, true);
     }
 
-    for (int ch = 0; ch < numChannels; ++ch)
-        sourceScratch.copyFrom(ch, 0, buffer, ch, 0, numSamples);
-
+    // Clean the low end in the actual signal path: a gentle rumble cut and
+    // a restrained low-mid reduction around 285 Hz keep the vocal from sounding muddy.
     {
-        juce::dsp::AudioBlock<float> block(sourceScratch);
+        juce::dsp::AudioBlock<float> block(buffer);
         auto active = block.getSubBlock(0, (size_t)numSamples);
         juce::dsp::ProcessContextReplacing<float> context(active);
         lowCut.process(context);
         mudCut.process(context);
-        sourceHP.process(context);
-        sourceLP.process(context);
     }
 
     // Build clean spectral bands from the original input. This is intentionally
@@ -285,10 +282,10 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         mixSmooth = mixSmoothing * mixSmooth + (1.0f - mixSmoothing) * mixTarget;
         outputSmooth = outputSmoothingCoeff * outputSmooth + (1.0f - outputSmoothingCoeff) * outputTarget;
 
-        const float bodyLift = std::pow(10.0f, (4.2f * midGainSmooth) / 20.0f) - 1.0f;
-        const float clarityLift = std::pow(10.0f, (8.5f * midGainSmooth) / 20.0f) - 1.0f;
-        const float airLift = std::pow(10.0f, (16.0f * highGainSmooth) / 20.0f) - 1.0f;
-        const float ultraLift = std::pow(10.0f, (9.5f * highGainSmooth) / 20.0f) - 1.0f;
+        const float bodyLift = std::pow(10.0f, (1.8f * midGainSmooth) / 20.0f) - 1.0f;
+        const float clarityLift = std::pow(10.0f, (6.8f * midGainSmooth) / 20.0f) - 1.0f;
+        const float airLift = std::pow(10.0f, (13.5f * highGainSmooth) / 20.0f) - 1.0f;
+        const float ultraLift = std::pow(10.0f, (7.0f * highGainSmooth) / 20.0f) - 1.0f;
         // Do not auto-trim the enhancement: the user explicitly controls the final level
         // with OUTPUT, and automatic attenuation was masking the perceived effect.
         const float autoTrim = 1.0f;
@@ -316,8 +313,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
             // Keep harmonic energy strongest in the vocal presence band. The upper-air
             // harmonics are deliberately lower to avoid turning S/T consonants harsh.
-            const float midExcitation = 0.76f * midHarmonics;
-            const float highExcitation = 0.34f * highHarmonics;
+            const float midExcitation = 0.54f * midHarmonics;
+            const float highExcitation = 0.22f * highHarmonics;
 
             // Frequency-selective de-essing: reduce only the enhancement, not the dry vocal.
             deesserEnv[channel] = smoothEnvelope(deesserEnv[channel], high, highAttack, highRelease);
@@ -333,15 +330,15 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
                                      + (mid * clarityLift * deesserGainSmooth[channel])
                                      + (high * airLift * deesserGainSmooth[channel])
                                      + (ultra * ultraLift);
-            const float harmonicReturn = (0.26f * bodyHarmonics * midGainSmooth)
+            const float harmonicReturn = (0.14f * bodyHarmonics * midGainSmooth)
                                        + (midExcitation * midGainSmooth * deesserGainSmooth[channel])
                                        + (highExcitation * highGainSmooth * deesserGainSmooth[channel]);
             const float enhanced = input + (spectralLift + harmonicReturn) * mixSmooth;
-            // A restrained 1.4 dB makeup lift makes the improvement translate
-            // at normal monitor levels. A smooth tanh ceiling catches only peaks
-            // and avoids the brittle clipping that would exaggerate sibilance.
-            const float gained = enhanced * outputSmooth * autoTrim * 1.1749f;
-            const float processed = std::tanh(gained * 0.92f) / std::tanh(0.92f);
+            // A small 0.4 dB makeup lift keeps the voice present. The softer
+            // saturation knee acts only on stronger peaks and avoids constant
+            // compression of quiet consonants and vocal detail.
+            const float gained = enhanced * outputSmooth * autoTrim * 1.0471f;
+            const float processed = std::tanh(gained * 1.35f) / std::tanh(1.35f);
             out[i] = std::isfinite(processed) ? processed : input;
         }
     }
