@@ -263,6 +263,7 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         }
     }
 
+}
 
 bool EC_AIRAudioProcessor::hasEditor() const { return true; }
 juce::AudioProcessorEditor* EC_AIRAudioProcessor::createEditor()
