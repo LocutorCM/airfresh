@@ -237,6 +237,19 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     }
     if (sr >= 88200.0)
     {
+        // Create a very low-level second/third-harmonic layer from the upper
+        // vocal band, then isolate only 20-40 kHz. It is enabled only when the
+        // session sample rate can represent this spectrum.
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            const float* source = cleanHighScratch.getReadPointer(ch);
+            float* generated = ultraScratch.getWritePointer(ch);
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const float x = std::isfinite(source[i]) ? source[i] : 0.0f;
+                generated[i] = 0.22f * (std::tanh(2.8f * x) - 2.8f * x);
+            }
+        }
         juce::dsp::AudioBlock<float> block(ultraScratch);
         auto active = block.getSubBlock(0, (size_t)numSamples);
         juce::dsp::ProcessContextReplacing<float> context(active);
