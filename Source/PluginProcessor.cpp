@@ -56,6 +56,7 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     sourceHP.prepare(spec); sourceLP.prepare(spec);
     midHarmHP.prepare(spec); midHarmLP.prepare(spec); highHarmHP.prepare(spec);
     midEQHP.prepare(spec); midEQLP.prepare(spec); highEQHP.prepare(spec);
+    bodyHP.prepare(spec); bodyLP.prepare(spec); ultraHP.prepare(spec); ultraLP.prepare(spec);
     deesserHP.prepare(spec); deesserLP.prepare(spec);
     lowCut.prepare(spec); mudCut.prepare(spec);
     exciterLowPass.prepare(spec); highSmoothLP.prepare(spec); highCleanSmoothLP.prepare(spec);
@@ -63,6 +64,7 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     sourceHP.reset(); sourceLP.reset();
     midHarmHP.reset(); midHarmLP.reset(); highHarmHP.reset();
     midEQHP.reset(); midEQLP.reset(); highEQHP.reset();
+    bodyHP.reset(); bodyLP.reset(); ultraHP.reset(); ultraLP.reset();
     deesserHP.reset(); deesserLP.reset();
     lowCut.reset(); mudCut.reset();
     exciterLowPass.reset(); highSmoothLP.reset(); highCleanSmoothLP.reset();
@@ -75,6 +77,8 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     highScratch.setSize(ch, block, false, false, true);
     cleanMidScratch.setSize(ch, block, false, false, true);
     cleanHighScratch.setSize(ch, block, false, false, true);
+    bodyScratch.setSize(ch, block, false, false, true);
+    ultraScratch.setSize(ch, block, false, false, true);
 
     for (int i = 0; i < 2; ++i)
     {
@@ -158,6 +162,10 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *midEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 1800.0f));
     *midEQLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 6500.0f));
     *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
+    *bodyHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 120.0f));
+    *bodyLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 420.0f));
+    *ultraHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 20000.0f));
+    *ultraLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 40000.0f));
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 11500.0f));
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 28.0f));
@@ -196,11 +204,15 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     {
         cleanMidScratch.setSize(numChannels, numSamples, false, false, true);
         cleanHighScratch.setSize(numChannels, numSamples, false, false, true);
+        bodyScratch.setSize(numChannels, numSamples, false, false, true);
+        ultraScratch.setSize(numChannels, numSamples, false, false, true);
     }
     for (int ch = 0; ch < numChannels; ++ch)
     {
         cleanMidScratch.copyFrom(ch, 0, buffer, ch, 0, numSamples);
         cleanHighScratch.copyFrom(ch, 0, buffer, ch, 0, numSamples);
+        bodyScratch.copyFrom(ch, 0, buffer, ch, 0, numSamples);
+        ultraScratch.copyFrom(ch, 0, buffer, ch, 0, numSamples);
     }
     {
         juce::dsp::AudioBlock<float> block(cleanMidScratch);
@@ -216,12 +228,31 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         highEQHP.process(context);
         highCleanSmoothLP.process(context);
     }
+    {
+        juce::dsp::AudioBlock<float> block(bodyScratch);
+        auto active = block.getSubBlock(0, (size_t)numSamples);
+        juce::dsp::ProcessContextReplacing<float> context(active);
+        bodyHP.process(context);
+        bodyLP.process(context);
+    }
+    if (sr >= 88200.0)
+    {
+        juce::dsp::AudioBlock<float> block(ultraScratch);
+        auto active = block.getSubBlock(0, (size_t)numSamples);
+        juce::dsp::ProcessContextReplacing<float> context(active);
+        ultraHP.process(context);
+        ultraLP.process(context);
+    }
+    else
+    {
+        ultraScratch.clear();
+    }
 
     const float gainSmoothing = std::exp(-1.0f / (0.015f * (float)sr));
     const float mixSmoothing = std::exp(-1.0f / (0.015f * (float)sr));
     const float outputSmoothingCoeff = std::exp(-1.0f / (0.015f * (float)sr));
-    const float highAttack = std::exp(-1.0f / (0.002f * (float)sr));
-    const float highRelease = std::exp(-1.0f / (0.080f * (float)sr));
+    const float highAttack = std::exp(-1.0f / (0.0015f * (float)sr));
+    const float highRelease = std::exp(-1.0f / (0.120f * (float)sr));
 
     // Audible parallel exciter plus a controlled spectral lift. The clean signal
     // is always passed through; enhancement is added on top and never gates audio.
@@ -232,8 +263,7 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     // Broad, gentle shelves are paired with harmonic generation to create an
     // audible "air" lift even on clean/low-level vocal recordings.
-    const float midDb = 6.0f * midAmountTarget;
-    const float highDb = 12.0f * highAmountTarget;
+    // Four-band tonal enhancement: body, clarity, audible air and ultrasonic air.
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -242,8 +272,10 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         mixSmooth = mixSmoothing * mixSmooth + (1.0f - mixSmoothing) * mixTarget;
         outputSmooth = outputSmoothingCoeff * outputSmooth + (1.0f - outputSmoothingCoeff) * outputTarget;
 
-        const float midLift = std::pow(10.0f, (3.0f * midGainSmooth) / 20.0f) - 1.0f;
-        const float highLift = std::pow(10.0f, (6.0f * highGainSmooth) / 20.0f) - 1.0f;
+        const float bodyLift = std::pow(10.0f, (3.5f * midGainSmooth) / 20.0f) - 1.0f;
+        const float clarityLift = std::pow(10.0f, (7.0f * midGainSmooth) / 20.0f) - 1.0f;
+        const float airLift = std::pow(10.0f, (15.0f * highGainSmooth) / 20.0f) - 1.0f;
+        const float ultraLift = std::pow(10.0f, (9.0f * highGainSmooth) / 20.0f) - 1.0f;
         // Do not auto-trim the enhancement: the user explicitly controls the final level
         // with OUTPUT, and automatic attenuation was masking the perceived effect.
         const float autoTrim = 1.0f;
@@ -253,11 +285,15 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             float* out = buffer.getWritePointer(ch);
             const float* midBand = cleanMidScratch.getReadPointer(ch);
             const float* highBand = cleanHighScratch.getReadPointer(ch);
+            const float* bodyBand = bodyScratch.getReadPointer(ch);
+            const float* ultraBand = ultraScratch.getReadPointer(ch);
             const int channel = juce::jmin(ch, 1);
 
             const float input = std::isfinite(out[i]) ? out[i] : 0.0f;
             const float mid = std::isfinite(midBand[i]) ? midBand[i] : 0.0f;
             const float high = std::isfinite(highBand[i]) ? highBand[i] : 0.0f;
+            const float body = std::isfinite(bodyBand[i]) ? bodyBand[i] : 0.0f;
+            const float ultra = std::isfinite(ultraBand[i]) ? ultraBand[i] : 0.0f;
 
             // Generate upper harmonics from the isolated presence and air bands.
             const float midShaped = std::tanh(mid * midDrive);
@@ -268,15 +304,22 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             const float midExcitation = 0.68f * midHarmonics;
             const float highExcitation = 0.58f * highHarmonics;
 
-            const float highLevel = std::abs(high);
-            const float deEssTarget = juce::jlimit(0.72f, 1.0f,
-                1.0f - juce::jmax(0.0f, highLevel - 0.10f) * 0.45f);
+            // Frequency-selective de-essing: reduce only the enhancement, not the dry vocal.
+            deesserEnv[channel] = smoothEnvelope(deesserEnv[channel], high, highAttack, highRelease);
+            const float sibilance = juce::jmax(0.0f, deesserEnv[channel] - 0.018f);
+            const float deEssTarget = juce::jlimit(0.38f, 1.0f, 1.0f - sibilance * 5.5f);
             const float deEssCoeff = deEssTarget < deesserGainSmooth[channel] ? highAttack : highRelease;
             deesserGainSmooth[channel] = deEssCoeff * deesserGainSmooth[channel]
                                        + (1.0f - deEssCoeff) * deEssTarget;
 
-            const float spectralLift = (mid * midLift) + (high * highLift);
-            const float harmonicReturn = (midExcitation * midGainSmooth)
+            const float bodyDrive = 2.5f + midPct * 0.055f;
+            const float bodyHarmonics = std::tanh(body * bodyDrive) - body * bodyDrive;
+            const float spectralLift = (body * bodyLift)
+                                     + (mid * clarityLift * deesserGainSmooth[channel])
+                                     + (high * airLift * deesserGainSmooth[channel])
+                                     + (ultra * ultraLift);
+            const float harmonicReturn = (0.34f * bodyHarmonics * midGainSmooth)
+                                       + (midExcitation * midGainSmooth * deesserGainSmooth[channel])
                                        + (highExcitation * highGainSmooth * deesserGainSmooth[channel]);
             const float enhanced = input + (spectralLift + harmonicReturn) * mixSmooth;
             const float processed = enhanced * outputSmooth * autoTrim;
