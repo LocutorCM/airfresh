@@ -45,6 +45,7 @@ private:
     StereoFilter lowCut, mudCut;
     StereoFilter exciterLowPass;
     StereoFilter highSmoothLP;
+    StereoFilter highCleanSmoothLP;
 
     // Reused work buffers: avoid per-block allocations in the normal audio path.
     juce::AudioBuffer<float> sourceScratch, exciterScratch, midScratch, highScratch;
