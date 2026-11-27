@@ -58,14 +58,14 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     midEQHP.prepare(spec); midEQLP.prepare(spec); highEQHP.prepare(spec);
     deesserHP.prepare(spec); deesserLP.prepare(spec);
     lowCut.prepare(spec); mudCut.prepare(spec);
-    exciterLowPass.prepare(spec); highSmoothLP.prepare(spec);
+    exciterLowPass.prepare(spec); highSmoothLP.prepare(spec); highCleanSmoothLP.prepare(spec);
 
     sourceHP.reset(); sourceLP.reset();
     midHarmHP.reset(); midHarmLP.reset(); highHarmHP.reset();
     midEQHP.reset(); midEQLP.reset(); highEQHP.reset();
     deesserHP.reset(); deesserLP.reset();
     lowCut.reset(); mudCut.reset();
-    exciterLowPass.reset(); highSmoothLP.reset();
+    exciterLowPass.reset(); highSmoothLP.reset(); highCleanSmoothLP.reset();
 
     const int ch = juce::jmax(1, getTotalNumOutputChannels());
     const int block = juce::jmax(1, samplesPerBlock);
@@ -164,7 +164,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 28.0f));
     *mudCut.state = *juce::dsp::IIR::Coefficients<float>::makePeakFilter(sr, safeCutoff(sr, 280.0f), 0.8f, 0.94f);
     *exciterLowPass.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 17000.0f));
-    *highSmoothLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 19500.0f));
+    *highSmoothLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 17000.0f));
+    *highCleanSmoothLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 19500.0f));
 
     // Scratch buffers are allocated in prepareToPlay; resize only for an unexpected
     // host block larger than the advertised maximum.
@@ -254,7 +255,7 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         juce::dsp::AudioBlock<float> block(cleanHighScratch);
         juce::dsp::ProcessContextReplacing<float> context(block);
         highEQHP.process(context);
-        highSmoothLP.process(context);
+        highCleanSmoothLP.process(context);
     }
 
     const float gainSmoothing = std::exp(-1.0f / (0.025f * (float)sr));
