@@ -156,8 +156,8 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     *midHarmLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 8500.0f));
     *highHarmHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 8500.0f));
     *midEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 1800.0f));
-    *midEQLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 8500.0f));
-    *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 8500.0f));
+    *midEQLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 6500.0f));
+    *highEQHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 6500.0f));
     *deesserHP.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 5200.0f));
     *deesserLP.state = *juce::dsp::IIR::Coefficients<float>::makeLowPass(sr, safeCutoff(sr, 11500.0f));
     *lowCut.state = *juce::dsp::IIR::Coefficients<float>::makeHighPass(sr, safeCutoff(sr, 28.0f));
@@ -217,22 +217,25 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         highCleanSmoothLP.process(context);
     }
 
-    const float gainSmoothing = std::exp(-1.0f / (0.025f * (float)sr));
-    const float mixSmoothing = std::exp(-1.0f / (0.020f * (float)sr));
-    const float outputSmoothingCoeff = std::exp(-1.0f / (0.020f * (float)sr));
-    const float highAttack = std::exp(-1.0f / (0.003f * (float)sr));
-    const float highRelease = std::exp(-1.0f / (0.100f * (float)sr));
+    const float gainSmoothing = std::exp(-1.0f / (0.015f * (float)sr));
+    const float mixSmoothing = std::exp(-1.0f / (0.015f * (float)sr));
+    const float outputSmoothingCoeff = std::exp(-1.0f / (0.015f * (float)sr));
+    const float highAttack = std::exp(-1.0f / (0.002f * (float)sr));
+    const float highRelease = std::exp(-1.0f / (0.080f * (float)sr));
 
-    // Harmonic excitation, rather than a static treble shelf. The nonlinear
-    // residual is generated in isolated presence/air bands and added in parallel.
-    // Amount curves are deliberately non-linear so useful excitation is audible
-    // through the middle of the knob travel, while zero remains completely clean.
-    const float midAmountTarget = std::pow(midPct / 100.0f, 1.15f);
-    const float highAmountTarget = std::pow(highPct / 100.0f, 1.10f);
-    const float midDrive = 3.0f + midPct * 0.075f;
-    const float highDrive = 5.0f + highPct * 0.105f;
-    const float midResidualScale = 4.0f;
-    const float highResidualScale = 7.0f;
+    // Audible parallel exciter plus a controlled spectral lift. The clean signal
+    // is always passed through; enhancement is added on top and never gates audio.
+    const float midAmountTarget = std::pow(midPct / 100.0f, 0.90f);
+    const float highAmountTarget = std::pow(highPct / 100.0f, 0.90f);
+    const float midDrive = 4.0f + midPct * 0.10f;
+    const float highDrive = 6.0f + highPct * 0.12f;
+
+    // Broad, gentle shelves are paired with harmonic generation to create an
+    // audible "air" lift even on clean/low-level vocal recordings.
+    const float midDb = 3.0f * midAmountTarget;
+    const float highDb = 6.0f * highAmountTarget;
+    const float midLinearLift = std::pow(10.0f, midDb / 20.0f) - 1.0f;
+    const float highLinearLift = std::pow(10.0f, highDb / 20.0f) - 1.0f;
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -241,10 +244,9 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         mixSmooth = mixSmoothing * mixSmooth + (1.0f - mixSmoothing) * mixTarget;
         outputSmooth = outputSmoothingCoeff * outputSmooth + (1.0f - outputSmoothingCoeff) * outputTarget;
 
-        // Level compensation is linked across stereo channels. It offsets the
-        // added harmonic energy without dulling the original dry signal.
-        const float excitationLoad = 0.10f * (midGainSmooth + highGainSmooth) * mixSmooth;
-        const float autoTrim = 1.0f / (1.0f + excitationLoad);
+        const float midLift = std::pow(10.0f, (3.0f * midGainSmooth) / 20.0f) - 1.0f;
+        const float highLift = std::pow(10.0f, (6.0f * highGainSmooth) / 20.0f) - 1.0f;
+        const float autoTrim = 1.0f / (1.0f + 0.10f * (midGainSmooth + highGainSmooth) * mixSmooth);
 
         for (int ch = 0; ch < numChannels; ++ch)
         {
@@ -257,27 +259,28 @@ void EC_AIRAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             const float mid = std::isfinite(midBand[i]) ? midBand[i] : 0.0f;
             const float high = std::isfinite(highBand[i]) ? highBand[i] : 0.0f;
 
-            // Subtract the linear component of a soft clipper: what remains is
-            // the generated harmonic content, not another copy of the source.
-            const float midHarmonics = mid - std::tanh(mid * midDrive) / midDrive;
-            const float highHarmonics = high - std::tanh(high * highDrive) / highDrive;
+            // Generate upper harmonics from the isolated presence and air bands.
+            const float midShaped = std::tanh(mid * midDrive);
+            const float highShaped = std::tanh(high * highDrive);
+            const float midHarmonics = midShaped - (mid * midDrive);
+            const float highHarmonics = highShaped - (high * highDrive);
 
-            // Smoothly bound the parallel harmonic return. This prevents harsh
-            // transient spikes while retaining a clearly audible air/presence lift.
-            const float midExcitation = 0.16f * std::tanh(midHarmonics * midResidualScale * 5.0f);
-            const float highExcitation = 0.19f * std::tanh(highHarmonics * highResidualScale * 5.0f);
+            const float midExcitation = 0.42f * midHarmonics;
+            const float highExcitation = 0.34f * highHarmonics;
 
             const float highLevel = std::abs(high);
-            const float deEssTarget = juce::jlimit(0.68f, 1.0f,
-                1.0f - juce::jmax(0.0f, highLevel - 0.12f) * 0.55f);
+            const float deEssTarget = juce::jlimit(0.72f, 1.0f,
+                1.0f - juce::jmax(0.0f, highLevel - 0.10f) * 0.45f);
             const float deEssCoeff = deEssTarget < deesserGainSmooth[channel] ? highAttack : highRelease;
             deesserGainSmooth[channel] = deEssCoeff * deesserGainSmooth[channel]
                                        + (1.0f - deEssCoeff) * deEssTarget;
 
+            const float spectralLift = (mid * midLift) + (high * highLift);
             const float harmonicReturn = (midExcitation * midGainSmooth)
                                        + (highExcitation * highGainSmooth * deesserGainSmooth[channel]);
-            const float processed = (input + harmonicReturn * mixSmooth) * outputSmooth * autoTrim;
-            out[i] = std::isfinite(processed) ? processed : 0.0f;
+            const float enhanced = input + (spectralLift + harmonicReturn) * mixSmooth;
+            const float processed = enhanced * outputSmooth * autoTrim;
+            out[i] = std::isfinite(processed) ? processed : input;
         }
     }
 
