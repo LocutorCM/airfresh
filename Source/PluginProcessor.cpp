@@ -73,6 +73,8 @@ void EC_AIRAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     exciterScratch.setSize(ch, block, false, false, true);
     midScratch.setSize(ch, block, false, false, true);
     highScratch.setSize(ch, block, false, false, true);
+    cleanMidScratch.setSize(ch, block, false, false, true);
+    cleanHighScratch.setSize(ch, block, false, false, true);
 
     for (int i = 0; i < 2; ++i)
     {
