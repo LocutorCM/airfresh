@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
-project(EC_AIR VERSION 1.0.0)
 
+# === FIX: Esto tiene que ir ANTES del project() para que sí lo respete Xcode ===
+set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version - Monterey en adelante")
+set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Architectures - Universal Binary")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Monterey (12.0) en adelante, Universal
-set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version - Monterey en adelante")
-set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Architectures - Universal Binary")
+project(EC_AIR VERSION 1.0.0)
 
 # OBLIGATORIO para macos-15-intel + Xcode 16: forzar min-version en compilador y linker
 if(APPLE)
@@ -27,9 +27,11 @@ juce_add_plugin(EC_AIR
     COMPANY_NAME "EC AUDIO"
     COMPANY_WEBSITE "https://ecaudio.com"
     COMPANY_EMAIL "info@ecaudio.com"
-    PLUGIN_MANUFACTURER_CODE ECAu
-    PLUGIN_CODE AiAr
-    FORMATS VST3 AU Standalone
+    # FIX V4: Antes ECAu / AiAr con minusculas, auval lo rechazaba
+    # Ahora todo en MAYUSCULAS, asi Logic si lo valida
+    PLUGIN_MANUFACTURER_CODE ECAU
+    PLUGIN_CODE ECAR
+    FORMATS AU VST3 Standalone
     PRODUCT_NAME "EC AIR EXCITER"
     VERSION "1.0.0"
     IS_SYNTH FALSE
@@ -43,22 +45,25 @@ juce_add_plugin(EC_AIR
 
 juce_generate_juce_header(EC_AIR)
 
-# === IMAGEN DE FONDO DEL PLUGIN - LA QUE SUBISTE A GITHUB ===
+# === IMAGEN DE FONDO DEL PLUGIN ===
 # Debe estar en: Assets/EC-Air-Exciter-Background.png
-# Tiene que ser PNG, no WebP
 # Si no existe, compila con fondo plano y NO truena el build
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Assets/EC-Air-Exciter-Background.png)
     juce_add_binary_data(ECAirAssets
+        HEADER_NAME "ECAirAssets.h"
+        NAMESPACE ECAirAssets
         SOURCES
             Assets/EC-Air-Exciter-Background.png
     )
     target_compile_definitions(EC_AIR PRIVATE EC_HAS_BACKGROUND_IMAGE=1)
     message(STATUS "Background image found: Assets/EC-Air-Exciter-Background.png")
 else()
-    message(WARNING "Background image NOT found: Assets/EC-Air-Exciter-Background.png - building without background image")
-    # Target vacio para que no falle el link
-    juce_add_binary_data(ECAirAssets SOURCES)
+    message(WARNING "Background image NOT found - building without background image")
+    # FIX: Antes aqui creabas un BinaryData vacio y JUCE 8 tronaba en GitHub
+    # Ahora simplemente no creamos el target, y el Editor ya tiene el #if para compilar sin imagen
     target_compile_definitions(EC_AIR PRIVATE EC_HAS_BACKGROUND_IMAGE=0)
+    # Target dummy para que el link no falle
+    add_library(ECAirAssets INTERFACE)
 endif()
 
 target_sources(EC_AIR PRIVATE
@@ -73,6 +78,8 @@ target_compile_definitions(EC_AIR PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_REPORT_APP_USAGE=0
+    # FIX: Para que el AU no falle la validacion en Logic en Macs M1/M2/M3
+    JUCE_STRICT_REFCOUNTEDPOINTER=1
 )
 
 target_link_libraries(EC_AIR PRIVATE
