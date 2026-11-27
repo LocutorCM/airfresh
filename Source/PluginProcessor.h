@@ -48,6 +48,7 @@ private:
 
     // Reused work buffers: avoid per-block allocations in the normal audio path.
     juce::AudioBuffer<float> sourceScratch, exciterScratch, midScratch, highScratch;
+    juce::AudioBuffer<float> cleanMidScratch, cleanHighScratch;
 
     float deesserEnv[2] = { 0.0f, 0.0f };
     float midDynEnv[2] = { 0.0f, 0.0f };
